@@ -324,7 +324,7 @@ class Custom_Pic_Action(BaseAction):
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
 
         try:
-            with urllib.request.urlopen(req, timeout=60) as response:
+            with urllib.request.urlopen(req, timeout=600) as response:
                 response_status = response.status
                 response_body_bytes = response.read()
                 response_body_str = response_body_bytes.decode("utf-8")
