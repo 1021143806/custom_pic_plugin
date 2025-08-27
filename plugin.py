@@ -233,7 +233,7 @@ class Custom_Pic_Action(BaseAction):
         """下载图片并将其编码为Base64字符串"""
         logger.info(f"{self.log_prefix} (B64) 下载并编码图片: {image_url[:70]}...")
         try:
-            with urllib.request.urlopen(image_url, timeout=60) as response:
+            with urllib.request.urlopen(image_url, timeout=600) as response:
                 if response.status == 200:
                     image_bytes = response.read()
                     base64_encoded_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -299,7 +299,7 @@ class Custom_Pic_Action(BaseAction):
             #"response_format": "b64_json",# gpt-image-1 无法使用 url 返回为 “b64_json"，豆包默认返回为 "url"
             "size": default_size,#固定size
             "guidance_scale": guidance_scale,
-            "watermark": watermark,
+            #"watermark": watermark,# gpt-image-1-az 不支持
             "seed": seed,  # seed is now always an int from process()
             "api-key": generate_api_key,
         }
