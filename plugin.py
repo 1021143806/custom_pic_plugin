@@ -20,18 +20,7 @@ from src.common.logger import get_logger
 
 # 导入API模块 - 标准Python包方式
 
-
-
 logger = get_logger("pic_action")
-
-# 当此模块被加载时，尝试生成配置文件（如果它不存在）
-# 注意：在某些插件加载机制下，这可能会在每次机器人启动或插件重载时执行
-# 考虑是否需要更复杂的逻辑来决定何时运行 (例如，仅在首次安装时)
-
-
-
-
-
 
 # ===== Action组件 =====
 
@@ -53,13 +42,14 @@ class Custom_Pic_Action(BaseAction):
     # 关键词设置（用于Normal模式）
     activation_keywords = ["画", "绘制", "生成图片", "画图", "draw", "paint", "图片生成"]
 
-        # LLM判定提示词（用于Focus模式）
+    # LLM判定提示词（用于Focus模式）
     llm_judge_prompt = """
 判定是否需要使用图片生成动作的条件：
-1. 用户明确要求画图、生成图片或创作图像
+1. 用户明确@你的名字并要求画图、生成图片或创作图像
 2. 用户描述了想要看到的画面或场景
 3. 对话中提到需要视觉化展示某些概念
 4. 用户想要创意图片或艺术作品
+5. 你想要通过画图来制作表情包来表达自己的一些情绪及文字不容易表达的画面时
 
 适合使用的情况：
 - "画一张..."、"画个..."、"生成图片"
@@ -73,6 +63,7 @@ class Custom_Pic_Action(BaseAction):
 3. 谈论已存在的图片或照片
 4. 技术讨论中提到绘图概念但无生成需求
 5. 用户明确表示不需要图片时
+6. 刚刚成功生成过图片，避免频繁请求
 """
 
     keyword_case_sensitive = False
@@ -85,10 +76,7 @@ class Custom_Pic_Action(BaseAction):
 
     # 动作使用场景
     action_require = [
-        #"当有人让你画东西时使用，你可以立刻画好，不用等待",
         "当有人要求你生成并发送一张图片时使用，不要频率太高",
-        #"当有人让你画一张图时使用",
-        #"当你想要通过自画像表情包来表达自己情感时使用，不要频率太高",
         "重点：不要连续发，如果你在前10句内已经发送过[图片]或者[表情包]或记录出现过类似描述的[图片]，就不要不选择此动作",
     ]
     associated_types = ["text", "image"]
@@ -103,6 +91,7 @@ class Custom_Pic_Action(BaseAction):
         # 配置验证
         http_base_url = self.get_config("api.base_url")
         http_api_key = self.get_config("api.api_key")
+        api_format = self.get_config("api.format", "openai")  # 获取API格式，默认为openai
 
         if not (http_base_url and http_api_key):
             error_msg = "抱歉，图片生成功能所需的HTTP配置（如API地址或密钥）不完整，无法提供服务。"
@@ -156,25 +145,31 @@ class Custom_Pic_Action(BaseAction):
                 del self._request_cache[cache_key]
 
         # 获取其他配置参数
-        seed_val = self.get_config("generation.default_seed",42)#种子
-        guidance_scale_val=self.get_config("default_guidance_scale",2.5)#强度
-        watermark_val = self.get_config("generation.default_watermark", True)#水印
-
+        seed_val = self.get_config("generation.default_seed", 42)  # 种子
+        guidance_scale_val = self.get_config("default_guidance_scale", 2.5)  # 强度
+        watermark_val = self.get_config("generation.default_watermark", True)  # 水印
 
         await self.send_text(
             f"收到！正在为您生成关于 '{description}' 的图片，请稍候...（模型: {default_model}, 尺寸: {image_size}）"
         )
 
         try:
-            success, result = await asyncio.to_thread(
-                self._make_http_image_request,
-                prompt=description,
-                model=default_model,
-                size=image_size,
-                seed=seed_val,
-                guidance_scale=guidance_scale_val,
-                watermark=watermark_val,
-            )
+            if api_format == "gemini":
+                success, result = await asyncio.to_thread(
+                    self._make_gemini_image_request,
+                    prompt=description,
+                    model=default_model,
+                )
+            else:  # 默认为openai格式
+                success, result = await asyncio.to_thread(
+                    self._make_openai_image_request,
+                    prompt=description,
+                    model=default_model,
+                    size=image_size,
+                    seed=seed_val,
+                    guidance_scale=guidance_scale_val,
+                    watermark=watermark_val,
+                )
         except Exception as e:
             logger.error(f"{self.log_prefix} (HTTP) 异步请求执行失败: {e!r}", exc_info=True)
             traceback.print_exc()
@@ -184,19 +179,15 @@ class Custom_Pic_Action(BaseAction):
         if success:
             # 如果返回的是Base64数据（以"iVBORw"等开头），直接使用
             if result.startswith(("iVBORw", "/9j/", "UklGR", "R0lGOD")):  # 常见图片格式的Base64前缀
-                #logger.info(f"{self.log_prefix} 获取到Base64图片数据，直接发送")
-                #logger.info(f"{self.log_prefix} (HTTP) 获取到Base64图片数据，长度: {len(self.log_prefix)}")
                 send_success = await self.send_image(result)
                 if send_success:
                     await self.send_text("图片表情已发送！")
                     return True, "图片表情已发送(Base64)"
                 else:
-                    await self.send_text("图片已处理为Base64，但作为表情发送失败了")#("图片已处理为Base64，但作为表情发送失败了。")
+                    await self.send_text("图片已处理为Base64，但作为表情发送失败了")
                     return False, "图片表情发送失败 (Base64)"
             else:  # 否则认为是URL
                 image_url = result
-            # print(f"image_url: {image_url}")
-            # print(f"result: {result}")
                 logger.info(f"{self.log_prefix} 图片URL获取成功: {image_url[:70]}... 下载并编码.")
 
                 try:
@@ -269,56 +260,51 @@ class Custom_Pic_Action(BaseAction):
         except (ValueError, TypeError):
             return False
 
-
-    def _make_http_image_request(
+    def _make_openai_image_request(
         self, prompt: str, model: str, size: str, seed: int | None, guidance_scale: float, watermark: bool
     ) -> Tuple[bool, str]:
-        """发送HTTP请求生成图片"""
-        base_url = self.get_config("api.base_url","")
-        generate_api_key = self.get_config("api.api_key","")
+        """发送OpenAI格式的HTTP请求生成图片"""
+        base_url = self.get_config("api.base_url", "")
+        generate_api_key = self.get_config("api.api_key", "")
 
         endpoint = f"{base_url.rstrip('/')}/images/generations"
 
-        #指定图片大小参数
-        default_size = size #初始化
-        enable_default_size = self.get_config("generation.fixed_size_enabled","false")#获取是否启用自定义图片大小，如果启用，将图片大小指定为固定值
+        # 指定图片大小参数
+        default_size = size  # 初始化
+        enable_default_size = self.get_config("generation.fixed_size_enabled", "false")  # 获取是否启用自定义图片大小
         if enable_default_size:
-            default_size = self.get_config("generation.default_size","")
+            default_size = self.get_config("generation.default_size", "")
 
         # 获取配置参数 - 使用字符串键名
-        custom_prompt_add = self.get_config("generation.custom_prompt_add","")#附加正面提示词参数
-        negative_prompt_add = self.get_config("generation.negative_prompt_add", "")#附加负面提示词参数
+        custom_prompt_add = self.get_config("generation.custom_prompt_add", "")  # 附加正面提示词参数
+        negative_prompt_add = self.get_config("generation.negative_prompt_add", "")  # 附加负面提示词参数
 
-        prompt_add= prompt + custom_prompt_add#不手动添加逗号，需要在配置文件中注意
-        negative_prompt = negative_prompt_add#暂时没有自动生成的负面参数
+        prompt_add = prompt + custom_prompt_add  # 不手动添加逗号，需要在配置文件中注意
+        negative_prompt = negative_prompt_add  # 暂时没有自动生成的负面参数
 
         payload_dict = {
             "model": model,
             "prompt": prompt_add,  # 使用附加的正面提示词
-            "negative_prompt":negative_prompt,
-            #"response_format": "b64_json",# gpt-image-1 无法使用 url 返回为 “b64_json"，豆包默认返回为 "url"
-            "size": default_size,#固定size
+            "negative_prompt": negative_prompt,
+            "size": default_size,  # 固定size
             "guidance_scale": guidance_scale,
-            #"watermark": watermark,# gpt-image-1-az 不支持
             "seed": seed,  # seed is now always an int from process()
             "api-key": generate_api_key,
         }
-        # if seed is not None: # No longer needed, seed is always an int
-        #     payload_dict["seed"] = seed
 
         data = json.dumps(payload_dict).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Authorization": f"{generate_api_key}",
-        }# gpt 或其他模型密钥要删除‘Bearer ’前缀
+        }  # gpt 或其他模型密钥要删除'Bearer '前缀
 
-        logger.info(f"{self.log_prefix} (HTTP) 发起图片请求: {model}, custom_prompt_add:{custom_prompt_add[:30]}...,Prompt: {prompt_add[:30]}...,NegativePrompt: {negative_prompt[:30]}... To: {endpoint}")
+        logger.info(f"{self.log_prefix} (OpenAI) 发起图片请求: {model}, custom_prompt_add:{custom_prompt_add[:30]}...,Prompt: {prompt_add[:30]}...,NegativePrompt: {negative_prompt[:30]}... To: {endpoint}")
         logger.debug(
-            f"{self.log_prefix} (HTTP) Request Headers: {{...Authorization: Bearer {generate_api_key[:10]}...}}"
+            f"{self.log_prefix} (OpenAI) Request Headers: {{...Authorization: {generate_api_key[:10]}...}}"
         )
         logger.debug(
-            f"{self.log_prefix} (HTTP) Request Body (api-key omitted): {json.dumps({k: v for k, v in payload_dict.items() if k != 'api-key'})}"
+            f"{self.log_prefix} (OpenAI) Request Body (api-key omitted): {json.dumps({k: v for k, v in payload_dict.items() if k != 'api-key'})}"
         )
 
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
@@ -329,12 +315,12 @@ class Custom_Pic_Action(BaseAction):
                 response_body_bytes = response.read()
                 response_body_str = response_body_bytes.decode("utf-8")
 
-                logger.info(f"{self.log_prefix} (HTTP) 响应: {response_status}. Preview: {response_body_str[:150]}...")
+                logger.info(f"{self.log_prefix} (OpenAI) 响应: {response_status}. Preview: {response_body_str[:150]}...")
 
                 if 200 <= response_status < 300:
                     response_data = json.loads(response_body_str)
                     b64_data = None
-                    image_url = None #清理缓存
+                    image_url = None  # 清理缓存
                     # 优先检查Base64数据
                     if (
                         isinstance(response_data.get("data"), list)
@@ -344,7 +330,7 @@ class Custom_Pic_Action(BaseAction):
                     ):
 
                         b64_data = response_data["data"][0]["b64_json"]
-                        logger.info(f"{self.log_prefix} (HTTP) 获取到Base64图片数据，长度: {len(b64_data)}")
+                        logger.info(f"{self.log_prefix} (OpenAI) 获取到Base64图片数据，长度: {len(b64_data)}")
                         return True, b64_data  # 直接返回Base64字符串
                     elif (
                             isinstance(response_data.get("data"), list)
@@ -352,7 +338,7 @@ class Custom_Pic_Action(BaseAction):
                             and isinstance(response_data["data"][0], dict)
                     ):
                         image_url = response_data["data"][0].get("url")
-                    elif(#魔搭社区返回的 json
+                    elif (  # 魔搭社区返回的 json
                             isinstance(response_data.get("images"), list)
                             and response_data["images"]
                             and isinstance(response_data["images"][0], dict)
@@ -361,20 +347,123 @@ class Custom_Pic_Action(BaseAction):
                     elif response_data.get("url"):
                         image_url = response_data.get("url")
                     if image_url:
-                        logger.info(f"{self.log_prefix} (HTTP) 图片生成成功，URL: {image_url[:70]}...")
+                        logger.info(f"{self.log_prefix} (OpenAI) 图片生成成功，URL: {image_url[:70]}...")
                         return True, image_url
                     else:
                         logger.error(
-                            f"{self.log_prefix} (HTTP) API成功但无图片URL. 响应预览: {response_body_str[:300]}..."
+                            f"{self.log_prefix} (OpenAI) API成功但无图片URL. 响应预览: {response_body_str[:300]}..."
                         )
                         return False, "图片生成API响应成功但未找到图片URL"
                 else:
                     logger.error(
-                        f"{self.log_prefix} (HTTP) API请求失败. 状态: {response.status}. 正文: {response_body_str[:300]}..."
+                        f"{self.log_prefix} (OpenAI) API请求失败. 状态: {response.status}. 正文: {response_body_str[:300]}..."
                     )
                     return False, f"图片API请求失败(状态码 {response.status})"
         except Exception as e:
-            logger.error(f"{self.log_prefix} (HTTP) 图片生成时意外错误: {e!r}", exc_info=True)
+            logger.error(f"{self.log_prefix} (OpenAI) 图片生成时意外错误: {e!r}", exc_info=True)
+            traceback.print_exc()
+            return False, f"图片生成HTTP请求时发生意外错误: {str(e)[:100]}"
+
+    def _make_gemini_image_request(
+        self, prompt: str, model: str
+    ) -> Tuple[bool, str]:
+        """发送Gemini格式的HTTP请求生成图片"""
+        base_url = self.get_config("api.base_url", "")
+        generate_api_key = self.get_config("api.api_key", "")
+
+        # 对于Gemini格式，base_url应该是完整的API端点
+        endpoint = base_url
+
+        # 获取配置参数
+        custom_prompt_add = self.get_config("generation.custom_prompt_add", "")  # 附加正面提示词参数
+        prompt_add = prompt + custom_prompt_add  # 拼接提示词
+
+        # 构建Gemini格式的请求体
+        payload_dict = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt_add
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "responseModalities": [
+                    "TEXT",
+                    "IMAGE"
+                ]
+            }
+        }
+
+        data = json.dumps(payload_dict).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"{generate_api_key}",
+        }  # Gemini格式通常使用Bearer前缀
+
+        logger.info(f"{self.log_prefix} (Gemini) 发起图片请求: {model}, Prompt: {prompt_add[:30]}... To: {endpoint}")
+        logger.debug(
+            f"{self.log_prefix} (Gemini) Request Headers: {{...Authorization: {generate_api_key[:10]}...}}"
+        )
+        logger.debug(
+            f"{self.log_prefix} (Gemini) Request Body: {json.dumps(payload_dict)}"
+        )
+
+        req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=600) as response:
+                response_status = response.status
+                response_body_bytes = response.read()
+                response_body_str = response_body_bytes.decode("utf-8")
+
+                logger.info(f"{self.log_prefix} (Gemini) 响应: {response_status}. Preview: {response_body_str[:150]}...")
+
+                if 200 <= response_status < 300:
+                    response_data = json.loads(response_body_str)
+                    
+                    # 解析Gemini格式的响应
+                    # 检查是否有候选响应
+                    if "candidates" in response_data and response_data["candidates"]:
+                        candidate = response_data["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            for part in candidate["content"]["parts"]:
+                                # 检查是否有内联图片数据
+                                if "inlineData" in part:
+                                    inline_data = part["inlineData"]
+                                    if "data" in inline_data:
+                                        b64_data = inline_data["data"]
+                                        logger.info(f"{self.log_prefix} (Gemini) 获取到Base64图片数据，长度: {len(b64_data)}")
+                                        return True, b64_data
+                    
+                    # 如果没有找到内联数据，检查是否有URL
+                    image_url = None
+                    if "contents" in response_data and response_data["contents"]:
+                        content = response_data["contents"][0]
+                        if "parts" in content:
+                            for part in content["parts"]:
+                                if "url" in part:
+                                    image_url = part["url"]
+                                    break
+                    
+                    if image_url:
+                        logger.info(f"{self.log_prefix} (Gemini) 图片生成成功，URL: {image_url[:70]}...")
+                        return True, image_url
+                    else:
+                        logger.error(
+                            f"{self.log_prefix} (Gemini) API成功但无图片数据. 响应预览: {response_body_str[:300]}..."
+                        )
+                        return False, "图片生成API响应成功但未找到图片数据"
+                else:
+                    logger.error(
+                        f"{self.log_prefix} (Gemini) API请求失败. 状态: {response.status}. 正文: {response_body_str[:300]}..."
+                    )
+                    return False, f"图片API请求失败(状态码 {response.status})"
+        except Exception as e:
+            logger.error(f"{self.log_prefix} (Gemini) 图片生成时意外错误: {e!r}", exc_info=True)
             traceback.print_exc()
             return False, f"图片生成HTTP请求时发生意外错误: {str(e)[:100]}"
 
@@ -384,15 +473,13 @@ class Custom_Pic_Action(BaseAction):
 class CustomPicPlugin(BasePlugin):
     """根据描述使用不同的 绘图 API生成图片的动作处理类"""
     # 插件基本信息
-    plugin_name = "custom_pic_plugin"# 内部标识符
-    plugin_version = "2.0.1"
+    plugin_name = "custom_pic_plugin"  # 内部标识符
+    plugin_version = "2.1.1"
     plugin_author = "Ptrel"
     enable_plugin = True
     dependencies: List[str] = []  # 插件依赖列表
     python_dependencies: List[str] = []  # Python包依赖列表
     config_file_name = "config.toml"
-
-
 
     # 步骤1: 定义配置节的描述
     config_section_descriptions = {
@@ -407,7 +494,7 @@ class CustomPicPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="custom_pic_plugin", description="自定义提示词绘图", required=True),
-            "config_version": ConfigField(type=str, default="1.2.2", description="插件版本号"),
+            "config_version": ConfigField(type=str, default="2.0.0", description="插件版本号"),
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件")
         },
         "api": {
@@ -420,14 +507,21 @@ class CustomPicPlugin(BasePlugin):
                     "https://api-inference.modelscope.cn/v1\"#魔搭可自选 lora，对应模型网址：https://modelscope.cn/models?page=1&tabKey=task&tasks=hotTask:text-to-image-synthesis&type=tasks", 
                     "\n#https://ark.cn-beijing.volces.com/api/v3\"#豆包火山方舟 API,对应网址：https://console.volcengine.com/auth/login?redirectURI=%2Fmessage%2Finnermsg",
                     "\n#https://api.chatanywhere.tech/v1\"#chatany API，第三方API，对应文档网址：https://chatanywhere.apifox.cn/",
-                    "\n#hhttps://apihk.unifyllm.top/v1\"#apihk API,更便宜的第三方，对应文档网址：https://apihk.unifyllm.top/",
-                    ]
+                    "\n#https://apihk.unifyllm.top/v1\"#apihk API,更便宜的第三方，对应文档网址：https://apihk.unifyllm.top/",
+                    "\n#https://apihk.unifyllm.top/v1beta/models/gemini-2.5-flash-image-preview:generateContent\"#Gemini格式API"
+                ]
             ),
             "api_key": ConfigField(
                 type=str,                 
                 default="Bearer xxxxxxxxxxxxxxxxxxxxxx",
-                description="API 的 api 密钥，需要添加‘Bearer ’前缀，chatany 不需要前缀，根据不同 api 文档进行选择（也有加或不加均支持的）,如 chatanywhere 的 key 不需要 Berarer，即直接输入密钥‘xxxxxxxxxxxxxxxxxxxxxxxx’", 
+                description="API 的 api 密钥，需要添加'Bearer '前缀，chatany 不需要前缀，根据不同 api 文档进行选择（也有加或不加均支持的）,如 chatanywhere 的 key 不需要 Bearer，即直接输入密钥'xxxxxxxxxxxxxxxxxxxxxxxx'", 
                 required=True
+            ),
+            "format": ConfigField(
+                type=str,
+                default="openai",
+                description="API请求格式",
+                choices=["openai", "gemini"]
             ),
         },
         "generation": {
@@ -436,9 +530,10 @@ class CustomPicPlugin(BasePlugin):
                 default="cancel13/liaocao\"#潦草 lora 图片生成模型（魔搭）",
                 description="模型选择，可自定义，以下为示例",
                 choices=[
-                    "MusePublic/14_ckpt_SD_XL\"#万象熔炉 | Anything XL，社区模型(魔搭)","\n#cancel13/liaocao\"#潦草 lora 图片生成模型，社区模型（魔搭）","\n#doubao-seedream-3-0-t2i-250415\"#豆包图片生成模型约 0.3￥ 一张图（火山）",
-                    "\n#gpt-image-1\"#GPT 生图，约 1.3￥ 一张图（chatany），约 0.2￥ 一张图（apihk）"
-                    ]
+                    "MusePublic/14_ckpt_SD_XL\"#万象熔炉 | Anything XL，社区模型(魔搭)", "\n#cancel13/liaocao\"#潦草 lora 图片生成模型，社区模型（魔搭）", "\n#doubao-seedream-3-0-t2i-250415\"#豆包图片生成模型约 0.3￥ 一张图（火山）",
+                    "\n#gpt-image-1\"#GPT 生图，约 1.3￥ 一张图（chatany），约 0.2￥ 一张图（apihk）",
+                    "\n#gemini-2.5-flash-image-preview\"#Gemini格式API模型"
+                ]
             ),
             "fixed_size_enabled": ConfigField(
                 type=bool,
@@ -449,7 +544,7 @@ class CustomPicPlugin(BasePlugin):
                 default="1024x1024",
                 description="要生成的图片尺寸",
                 example="1024x1024",
-                choices=["512x512","1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"],
+                choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"],
             ),
             "default_watermark": ConfigField(
                 type=bool, 
@@ -467,7 +562,7 @@ class CustomPicPlugin(BasePlugin):
             "custom_prompt_add": ConfigField(
                 type=str,
                 default=",Nordic picture book art style, minimalist flat design, soft rounded lines, high saturation color blocks collision, dominant forest green and warm orange palette, low contrast lighting, hand-drawn pencil texture, healing fairy-tale atmosphere, geometric natural forms, ample white space composition, warm and clean aesthetic,liaocao\"#北欧绘本艺术风格，简约扁平设计，柔和圆润线条，高饱和度色块碰撞，森林绿与暖橙主色调，低对比度光影，手绘铅笔质感，治愈系童话氛围，几何化自然形态，留白构图，温暖干净画面",
-                description="正面附加提示词（因为为附加，开头需要添加一个英文逗号‘,’，该参数不参与 LLM 模型转换，属于直接发送的参数，使用英文，使用词语和逗号的形式，不使用描述的原因为：为了确保提示词能够精准生效，防止 lora 关键词被替换。豆包可以直接使用中文句子作为提示词）。"
+                description="正面附加提示词（因为为附加，开头需要添加一个英文逗号','，该参数不参与 LLM 模型转换，属于直接发送的参数，使用英文，使用词语和逗号的形式，不使用描述的原因为：为了确保提示词能够精准生效，防止 lora 关键词被替换。豆包可以直接使用中文句子作为提示词）。"
             ),
             "negative_prompt_add": ConfigField(
                 type=str,
@@ -506,5 +601,3 @@ class CustomPicPlugin(BasePlugin):
             components.append((Custom_Pic_Action.get_action_info(), Custom_Pic_Action))
 
         return components
-
-
