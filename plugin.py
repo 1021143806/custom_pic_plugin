@@ -20,6 +20,9 @@ from src.common.logger import get_logger
 
 # 导入API模块 - 标准Python包方式
 
+# 添加回复生成器API导入
+from src.plugin_system import generator_api
+
 logger = get_logger("pic_action")
 
 # ===== Action组件 =====
@@ -148,10 +151,37 @@ class Custom_Pic_Action(BaseAction):
         seed_val = self.get_config("generation.default_seed", 42)  # 种子
         guidance_scale_val = self.get_config("default_guidance_scale", 2.5)  # 强度
         watermark_val = self.get_config("generation.default_watermark", True)  # 水印
+        enable_debug = self.get_config("components.enable_debug_info", False)
 
-        await self.send_text(
-            f"收到！正在为您生成关于 '{description}' 的图片，请稍候...（模型: {default_model}, 尺寸: {image_size}）"
-        )
+        if enable_debug:
+            await self.send_text(
+                f"收到！正在为您生成关于 '{description}' 的图片，请稍候...（模型: {default_model}, 尺寸: {image_size}）"
+            )
+        else:
+            # 使用回复生成器API生成自然语言回复
+            try:
+                success, reply_set, prompt = await generator_api.generate_reply(
+                    chat_stream=self.chat_stream,
+                    extra_info=f"用户请求生成图片，描述是：{description}。请生成一句自然语言的等待消息，告诉用户正在生成图片。",
+                    request_type="custom_pic_plugin_wait_message"
+                )
+                
+                if success and reply_set:
+                    # 从回复集合中提取第一个文本回复
+                    for reply_type, reply_content in reply_set:
+                        if reply_type == "text":
+                            await self.send_text(reply_content)
+                            break
+                    else:
+                        # 如果没有文本回复，使用默认消息
+                        await self.send_text("收到！正在为您生成图片，请稍候...")
+                else:
+                    # 如果生成失败，使用默认消息
+                    await self.send_text("收到！正在为您生成图片，请稍候...")
+            except Exception as e:
+                logger.error(f"{self.log_prefix} 回复生成器调用失败: {e!r}")
+                # 出错时使用默认消息
+                await self.send_text("收到！正在为您生成图片，请稍候...")
 
         try:
             if api_format == "gemini":
@@ -474,7 +504,7 @@ class CustomPicPlugin(BasePlugin):
     """根据描述使用不同的 绘图 API生成图片的动作处理类"""
     # 插件基本信息
     plugin_name = "custom_pic_plugin"  # 内部标识符
-    plugin_version = "2.1.1"
+    plugin_version = "2.1.2"
     plugin_author = "Ptrel"
     enable_plugin = True
     dependencies: List[str] = []  # 插件依赖列表
@@ -494,7 +524,7 @@ class CustomPicPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="custom_pic_plugin", description="自定义提示词绘图", required=True),
-            "config_version": ConfigField(type=str, default="2.0.0", description="插件版本号"),
+            "config_version": ConfigField(type=str, default="2.1.2", description="插件版本号"),
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件")
         },
         "api": {
@@ -575,7 +605,8 @@ class CustomPicPlugin(BasePlugin):
             "max_size": ConfigField(type=int, default=10, description="最大缓存数量"),
         },
         "components": {
-            "enable_image_generation": ConfigField(type=bool, default=True, description="是否启用图片生成Action")
+            "enable_image_generation": ConfigField(type=bool, default=True, description="是否启用图片生成Action"),
+            "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示,不启用会调用 llm 进行自然语言回复")
         },
         "logging": {
             "level": ConfigField(
