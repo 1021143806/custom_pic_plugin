@@ -141,7 +141,7 @@ class Custom_Pic_Action(BaseAction):
             # 直接发送缓存的结果
             send_success = await self.send_image(cached_result)
             if send_success:
-                await self.send_text("图片已发送！")
+                #await self.send_text("图片已发送！")
                 return True, "图片已发送(缓存)"
             else:
                 # 缓存失败，清除这个缓存项并继续正常流程
@@ -157,31 +157,31 @@ class Custom_Pic_Action(BaseAction):
             await self.send_text(
                 f"收到！正在为您生成关于 '{description}' 的图片，请稍候...（模型: {default_model}, 尺寸: {image_size}）"
             )
-        else:
-            # 使用回复生成器API生成自然语言回复
-            try:
-                success, reply_set, prompt = await generator_api.generate_reply(
-                    chat_stream=self.chat_stream,
-                    extra_info=f"用户请求生成图片，描述是：{description}。请生成一句自然语言的等待消息，告诉用户正在生成图片。",
-                    request_type="custom_pic_plugin_wait_message"
-                )
+        # else:
+        #     # 使用回复生成器API生成自然语言回复
+        #     try:
+        #         success, reply_set, prompt = await generator_api.generate_reply(
+        #             chat_stream=self.chat_stream,
+        #             extra_info=f"用户请求生成图片，描述是：{description}。请生成一句自然语言的等待消息，告诉用户正在生成图片。",
+        #             request_type="custom_pic_plugin_wait_message"
+        #         )
                 
-                if success and reply_set:
-                    # 从回复集合中提取第一个文本回复
-                    for reply_type, reply_content in reply_set:
-                        if reply_type == "text":
-                            await self.send_text(reply_content)
-                            break
-                    else:
-                        # 如果没有文本回复，使用默认消息
-                        await self.send_text("收到！正在为您生成图片，请稍候...")
-                else:
-                    # 如果生成失败，使用默认消息
-                    await self.send_text("收到！正在为您生成图片，请稍候...")
-            except Exception as e:
-                logger.error(f"{self.log_prefix} 回复生成器调用失败: {e!r}")
-                # 出错时使用默认消息
-                await self.send_text("收到！正在为您生成图片，请稍候...")
+        #         if success and reply_set:
+        #             # 从回复集合中提取第一个文本回复
+        #             for reply_type, reply_content in reply_set:
+        #                 if reply_type == "text":
+        #                     await self.send_text(reply_content)
+        #                     break
+        #             else:
+        #                 # 如果没有文本回复，使用默认消息
+        #                 await self.send_text("收到！正在为您生成图片，请稍候...")
+        #         else:
+        #             # 如果生成失败，使用默认消息
+        #             await self.send_text("收到！正在为您生成图片，请稍候...")
+        #     except Exception as e:
+        #         logger.error(f"{self.log_prefix} 回复生成器调用失败: {e!r}")
+        #         # 出错时使用默认消息
+        #         await self.send_text("收到！正在为您生成图片，请稍候...")
 
         try:
             if api_format == "gemini":
@@ -236,7 +236,7 @@ class Custom_Pic_Action(BaseAction):
                         self._request_cache[cache_key] = base64_image_string
                         self._cleanup_cache()
 
-                        await self.send_text("图片已发送！")
+                        #await self.send_text("图片已发送！")
                         return True, "图片已成功生成并发送"
                     else:
                         print(f"send_success: {send_success}")
