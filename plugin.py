@@ -197,7 +197,7 @@ class Custom_Pic_Action(BaseAction):
                     model=default_model,
                     size=image_size,
                     seed=seed_val,
-                    guidance_scale=guidance_scale_val,
+                    guidance_scale=guidance_scale_val,#模型指导强度，豆包会报错
                     watermark=watermark_val,
                 )
         except Exception as e:
@@ -312,14 +312,27 @@ class Custom_Pic_Action(BaseAction):
         prompt_add = prompt + custom_prompt_add  # 不手动添加逗号，需要在配置文件中注意
         negative_prompt = negative_prompt_add  # 暂时没有自动生成的负面参数
 
-        payload_dict = {
-            "model": model,
-            "prompt": prompt_add,  # 使用附加的正面提示词
-            "negative_prompt": negative_prompt,
-            "size": default_size,  # 固定size
-            "guidance_scale": guidance_scale,
-            "seed": seed,  # seed is now always an int from process()
-            "api-key": generate_api_key,
+        if base_url == "https://ark.cn-beijing.volces.com/api/v3": #豆包火山方舟
+            payload_dict = {
+                "model": model,
+                "prompt": prompt_add,  # 使用附加的正面提示词
+                "negative_prompt": negative_prompt,
+                "size": default_size,  # 固定size
+                #"guidance_scale": guidance_scale,#豆包会报错
+                "seed": seed,  # seed is now always an int from process()
+                "api-key": generate_api_key,
+                "watermark": watermark
+            }
+        else :#默认魔搭等其他
+            payload_dict = {
+                "model": model,
+                "prompt": prompt_add,  # 使用附加的正面提示词
+                "negative_prompt": negative_prompt,
+                "size": default_size,  # 固定size
+                "guidance_scale": guidance_scale,#豆包会报错
+                "seed": seed,  # seed is now always an int from process()
+                "api-key": generate_api_key
+                #"watermark": watermark#其他请求不需要发送水印
         }
 
         data = json.dumps(payload_dict).encode("utf-8")
