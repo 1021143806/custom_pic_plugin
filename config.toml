@@ -1,0 +1,89 @@
+# custom_pic_plugin - 自动生成的配置文件
+# 自定义多模型绘图插件配置文件
+# 一个基于魔搭及第三方 api 的生图插件，根据 0.8.0 api 文档修改，魔搭平台是一个公益网址，可以免费调用各种 lora 画图模型。插件支持其他 api 格式，支持魔搭api、火山api、chatany api、apihk api（openai 格式 、gemini 格式） 。可自定义正面提示词、负面提示词，可指定图片大小或让麦麦自己决定，可以调用 lora 模型调整画风生图，需要有一定 AI 绘图基础，适合喜欢折腾的人。
+# 支持热重载，修改后无需重启即可生效
+
+# 插件启用配置
+[plugin]
+# 自定义多模型绘图插件 (必需)
+name = "custom_pic_plugin"
+# 插件版本号
+config_version = "3.0.0"
+# 是否启用插件
+enabled = false  # 设置为 true 启用插件
+
+# 图片生成默认配置
+[generation]
+# 默认使用的模型ID，当用户没有指定模型时使用
+# 可选值: model1, model2, model3
+default_model = "model1"
+
+# 多模型配置，每个模型都有独立的参数设置
+[models]
+
+[models.model1]
+# 模型显示名称，用于日志和用户提示
+name = "魔搭潦草模型"
+# API的基础url
+# 可选值: https://api.siliconflow.cn/v1，勿添加/images/generations
+# "https://api-inference.modelscope.cn/v1"，#魔搭可自选 lora，对应模型网址：https://modelscope.cn/models?page=1&tabKey=task&tasks=hotTask:text-to-image-synthesis&type=tasks, 
+# "https://ark.cn-beijing.volces.com/api/v3"，#豆包火山方舟 API,对应网址：https://console.volcengine.com/auth/login?redirectURI=%2Fmessage%2Finnermsg, 
+# https://api.chatanywhere.tech/v1"#chatany API，第三方API，对应文档网址：https://chatanywhere.apifox.cn/, 
+# https://apihk.unifyllm.top/v1"#apihk API,更便宜的第三方，对应文档网址：https://apihk.unifyllm.top/, 
+# https://apihk.unifyllm.top/v1beta/models/gemini-2.5-flash-image-preview:generateContent"#Gemini格式API
+base_url = "https://api-inference.modelscope.cn/v1"
+# API 的 api 密钥，魔搭社区API密钥，需要'Bearer '前缀，根据不同 api 文档进行选择（也有加或不加均支持的）(必需)
+api_key = "Bearer your-modelscope-api-key-here"
+# API请求格式（可选值: siliconflow, openai, doubao, gemini）
+format = "openai"
+# 模型选择，可自定义
+model = "cancel13/liaocao"
+# 要生成的图片尺寸（建议查看支持的尺寸）
+default_size = "1024x1024"
+# 随机种子，用于复现图片
+seed = 42
+# 模型指导强度，影响图片与提示的关联性
+guidance_scale = 2.5
+# 是否默认添加水印
+watermark = true
+# 正面附加提示词（因为为附加，开头需要添加一个英文逗号','，该参数不参与 LLM 模型转换，属于直接发送的参数，使用英文，使用词语和逗号的形式，不使用描述的原因为：为了确保提示词能够精准生效，防止 lora 关键词被替换。豆包可以直接使用中文句子作为提示词）。
+custom_prompt_add = ",high quality, detailed, professional"
+# 负面附加提示词，保持默认或使用豆包时可留空，留空时保持两个英文双引号，否则会报错。
+negative_prompt_add = "low quality, blurry, distorted"
+
+# 你可以继续添加更多模型，如 model2, model3 等
+# [models.model1]
+# name = "魔搭潦草模型"
+# base_url = "https://api-inference.modelscope.cn/v1"
+# api_key = "Bearer your-modelscope-api-key-here"
+# format = "openai"
+# model = "cancel13/liaocao"
+# default_size = "1024x1024"
+# seed = 42
+# guidance_scale = 2.5
+# watermark = true
+# custom_prompt_add = ", "
+# negative_prompt_add = ""
+
+# 结果缓存配置
+[cache]
+# 是否启用请求缓存
+enabled = true
+# 最大缓存数量
+max_size = 10
+
+# 组件启用配置
+[components]
+# 是否启用图片生成Action
+enable_image_generation = true
+# 是否启用调试信息显示,不启用会调用 llm 进行自然语言回复
+enable_debug_info = false
+
+# 日志配置
+[logging]
+# 日志记录级别
+# 可选值: DEBUG, INFO, WARNING, ERROR
+level = "INFO"
+# 日志记录前缀
+prefix = "[custom_pic_Plugin]"
+
