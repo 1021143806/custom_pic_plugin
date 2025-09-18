@@ -139,6 +139,10 @@ class Custom_Pic_Action(BaseAction):
         # 获取模型配置参数
         model_name = model_config.get("model", "default-model")
         api_format = model_config.get("format", "openai")
+        enable_default_size = model_config.get("fixed_size_enabled","false")#获取是否启用自定义图片大小，如果启用，将图片大小指定为固定值
+        if enable_default_size:
+            size = None 
+            logger.info(f"{self.log_prefix} 使用自定义固定大小")
         image_size = size or model_config.get("default_size", "1024x1024")
 
         # 验证图片尺寸格式
@@ -608,7 +612,7 @@ class CustomPicPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="custom_pic_plugin", description="自定义多模型绘图插件", required=True),
-            "config_version": ConfigField(type=str, default="3.1.4", description="插件版本号"),
+            "config_version": ConfigField(type=str, default="3.1.6", description="插件版本号"),
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件")
         },
         "generation": {
@@ -662,6 +666,11 @@ class CustomPicPlugin(BasePlugin):
                 default="Kwai-Kolors/Kolors",
                 description="SiliconFlow平台的具体模型名称"
             ),
+            "fixed_size_enable": ConfigField(
+                type=bool,
+                default= False,
+                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
+            ),
             "default_size": ConfigField(
                 type=str,
                 default="1024x1024",
@@ -706,6 +715,11 @@ class CustomPicPlugin(BasePlugin):
                 type=str,
                 default="cancel13/liaocao",
                 description="具体的模型名称"
+            ),
+            "fixed_size_enable": ConfigField(
+                type=bool,
+                default= False,
+                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
             ),
             "default_size": ConfigField(
                 type=str,
@@ -752,6 +766,11 @@ class CustomPicPlugin(BasePlugin):
                 default="doubao-seedream-4-0-250828",
                 description="豆包具体的模型名称"
             ),
+            "fixed_size_enable": ConfigField(
+                type=bool,
+                default= False,
+                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
+            ),
             "default_size": ConfigField(
                 type=str,
                 default="1024x1024",
@@ -797,6 +816,11 @@ class CustomPicPlugin(BasePlugin):
                 default="gpt-image-1",
                 description="具体的模型名称"
             ),
+            "fixed_size_enable": ConfigField(
+                type=bool,
+                default= True,
+                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
+            ),
             "default_size": ConfigField(
                 type=str,
                 default="1024x1024",
@@ -841,6 +865,11 @@ class CustomPicPlugin(BasePlugin):
                 type=str,
                 default="gemini-2.5-flash-image-preview",
                 description="具体的模型名称"
+            ),
+            "fixed_size_enable": ConfigField(
+                type=bool,
+                default= False,
+                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
             ),
             "default_size": ConfigField(
                 type=str,
