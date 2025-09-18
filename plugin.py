@@ -587,7 +587,7 @@ class CustomPicPlugin(BasePlugin):
     
     # 插件基本信息
     plugin_name = "custom_pic_plugin"  # 内部标识符
-    plugin_version = "3.0.0"
+    plugin_version = "3.1.0"
     plugin_author = "Ptrel"
     enable_plugin = True
     dependencies: List[str] = []  # 插件依赖列表
@@ -608,206 +608,24 @@ class CustomPicPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="custom_pic_plugin", description="自定义多模型绘图插件", required=True),
-            "config_version": ConfigField(type=str, default="3.0.0", description="插件版本号"),
+            "config_version": ConfigField(type=str, default="3.1.4", description="插件版本号"),
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件")
         },
         "generation": {
             "default_model": ConfigField(
                 type=str,
                 default="model1",
-                description="默认使用的模型ID，当用户没有指定模型时使用",
-                choices=["model1", "model2", "model3", "model4"]
+                description="用户指定模型,可以在配置文件中添加更多模型配置，示例中依次为，硅基流动、魔搭社区（每天免费次数）、豆包、GPT生图、谷歌Gemini",
+                choices=["model1", "model2", "model3", "model4","model5"]
             ),
         },
-        "models": {
-            "model1": {
-                "name": ConfigField(type=str, default="SiliconFlow模型", description="模型显示名称"),
-                "base_url": ConfigField(
-                    type=str,
-                    default="https://api.siliconflow.cn/v1",
-                    description="SiliconFlow API的基础URL",
-                    required=True
-                ),
-                "api_key": ConfigField(
-                    type=str,
-                    default="Bearer sk-xxxxxxxxxxxxxxxxxxxxxx",
-                    description="SiliconFlow API密钥，需要Bearer前缀",
-                    required=True
-                ),
-                "format": ConfigField(
-                    type=str,
-                    default="siliconflow",
-                    description="API请求格式，使用siliconflow专用格式",
-                    choices=["siliconflow", "openai", "gemini", "doubao"]
-                ),
-                "model": ConfigField(
-                    type=str,
-                    default="Kwai-Kolors/Kolors",
-                    description="SiliconFlow平台的具体模型名称"
-                ),
-                "default_size": ConfigField(
-                    type=str,
-                    default="1024x1024",
-                    description="默认图片尺寸",
-                    choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-                ),
-                "seed": ConfigField(type=int, default=42, description="随机种子"),
-                "guidance_scale": ConfigField(type=float, default=7.5, description="SiliconFlow推荐的指导强度"),
-                "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
-                "custom_prompt_add": ConfigField(
-                    type=str,
-                    default=", high quality, detailed, masterpiece",
-                    description="SiliconFlow附加提示词，支持英文描述"
-                ),
-                "negative_prompt_add": ConfigField(
-                    type=str,
-                    default="low quality, blurry, distorted, ugly",
-                    description="SiliconFlow负面提示词"
-                ),
-            },
-            "model2": {
-                "name": ConfigField(type=str, default="魔搭潦草模型", description="模型显示名称"),
-                "base_url": ConfigField(
-                    type=str,
-                    default="https://api-inference.modelscope.cn/v1",
-                    description="魔搭社区API的基础url",
-                    required=True
-                ),
-                "api_key": ConfigField(
-                    type=str,
-                    default="Bearer xxxxxxxxxxxxxxxxxxxxxx",
-                    description="魔搭社区API密钥，需要添加'Bearer '前缀",
-                    required=True
-                ),
-                "format": ConfigField(
-                    type=str,
-                    default="openai",
-                    description="API请求格式",
-                    choices=["openai", "gemini", "siliconflow", "doubao"]
-                ),
-                "model": ConfigField(
-                    type=str,
-                    default="cancel13/liaocao",
-                    description="具体的模型名称"
-                ),
-                "default_size": ConfigField(
-                    type=str,
-                    default="1024x1024",
-                    description="默认图片尺寸",
-                    choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-                ),
-                "seed": ConfigField(type=int, default=42, description="随机种子"),
-                "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
-                "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
-                "custom_prompt_add": ConfigField(
-                    type=str,
-                    default=",Nordic picture book art style, minimalist flat design, soft rounded lines, high saturation color blocks collision, dominant forest green and warm orange palette, low contrast lighting, hand-drawn pencil texture, healing fairy-tale atmosphere, geometric natural forms, ample white space composition, warm and clean aesthetic,liaocao",
-                    description="正面附加提示词（因为为附加，开头需要添加一个英文逗号','，该参数不参与 LLM 模型转换，属于直接发送的参数，使用英文，使用词语和逗号的形式，不使用描述的原因为：为了确保提示词能够精准生效，防止 lora 关键词被替换。豆包可以直接使用中文句子作为提示词）。"
-                ),
-                "negative_prompt_add": ConfigField(
-                    type=str,
-                    default="Pornography,nudity,lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
-                    description="负面附加提示词，保持默认或使用豆包时可留空，留空时保持两个英文双引号，否则会报错。"
-                ),
-            },
-            "model3": {
-                "name": ConfigField(type=str, default="豆包图像模型", description="模型显示名称"),
-                "base_url": ConfigField(
-                    type=str,
-                    default="https://ark.cn-beijing.volces.com/api/v3",
-                    description="豆包API的基础url",
-                    required=True
-                ),
-                "api_key": ConfigField(
-                    type=str,
-                    default="Bearer xxxxxxxxxxxxxxxxxxxxxx",
-                    description="豆包API密钥，需要Bearer前缀",
-                    required=True
-                ),
-                "format": ConfigField(
-                    type=str,
-                    default="doubao",
-                    description="API请求格式，使用豆包专用格式",
-                    choices=["doubao", "openai", "gemini", "siliconflow"]
-                ),
-                "model": ConfigField(
-                    type=str,
-                    default="doubao-seedream-4-0-250828",
-                    description="豆包具体的模型名称"
-                ),
-                "default_size": ConfigField(
-                    type=str,
-                    default="1024x1024",
-                    description="默认图片尺寸",
-                    choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-                ),
-                "seed": ConfigField(type=int, default=42, description="随机种子"),
-                "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
-                "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
-                "custom_prompt_add": ConfigField(
-                    type=str,
-                    default="",
-                    description="豆包支持中文提示词，可以直接使用中文描述"
-                ),
-                "negative_prompt_add": ConfigField(
-                    type=str,
-                    default="",
-                    description="豆包负面提示词，可留空"
-                ),
-            },
-            "model4": {
-                "name": ConfigField(type=str, default="GPT图像模型", description="模型显示名称"),
-                "base_url": ConfigField(
-                    type=str,
-                    default="https://api.chatanywhere.tech/v1",
-                    description="GPT API的基础url",
-                    required=True
-                ),
-                "api_key": ConfigField(
-                    type=str,
-                    default="sk-xxxxxxxxxxxxxxxxxxxxxx",
-                    description="API密钥，chatanywhere不需要Bearer前缀",
-                    required=True
-                ),
-                "format": ConfigField(
-                    type=str,
-                    default="openai",
-                    description="API请求格式",
-                    choices=["openai", "gemini", "siliconflow", "doubao"]
-                ),
-                "model": ConfigField(
-                    type=str,
-                    default="gpt-image-1",
-                    description="具体的模型名称"
-                ),
-                "default_size": ConfigField(
-                    type=str,
-                    default="1024x1024",
-                    description="默认图片尺寸，GPT不支持512x512",
-                    choices=["1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-                ),
-                "seed": ConfigField(type=int, default=42, description="随机种子"),
-                "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
-                "watermark": ConfigField(type=bool, default=False, description="是否添加水印"),
-                "custom_prompt_add": ConfigField(
-                    type=str,
-                    default=",high quality, detailed, professional",
-                    description="GPT图像生成附加提示词"
-                ),
-                "negative_prompt_add": ConfigField(
-                    type=str,
-                    default="low quality, blurry, distorted",
-                    description="GPT图像生成负面提示词"
-                ),
-            }
-        },
-        "cache": {
+                "cache": {
             "enabled": ConfigField(type=bool, default=True, description="是否启用请求缓存"),
             "max_size": ConfigField(type=int, default=10, description="最大缓存数量"),
         },
         "components": {
             "enable_image_generation": ConfigField(type=bool, default=True, description="是否启用图片生成Action"),
-            "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示")
+            "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示,启用后会将生图提示词发送到群内")
         },
         "logging": {
             "level": ConfigField(
@@ -817,6 +635,232 @@ class CustomPicPlugin(BasePlugin):
                 choices=["DEBUG", "INFO", "WARNING", "ERROR"]
             ),
             "prefix": ConfigField(type=str, default="[custom_pic_Plugin]", description="日志记录前缀")
+        },
+        "models":{},
+        "models.model1": {
+            "name": ConfigField(type=str, default="SiliconFlow模型", description="模型显示名称"),
+            "base_url": ConfigField(
+                type=str,
+                default="https://api.siliconflow.cn/v1",
+                description="SiliconFlow API的基础URL",
+                required=True
+            ),
+            "api_key": ConfigField(
+                type=str,
+                default="Bearer sk-xxxxxxxxxxxxxxxxxxxxxx",
+                description="SiliconFlow API密钥，需要Bearer前缀",
+                required=True
+            ),
+            "format": ConfigField(
+                type=str,
+                default="siliconflow",
+                description="API请求格式，使用siliconflow专用格式",
+                choices=["siliconflow", "openai", "gemini", "doubao"]
+            ),
+            "model": ConfigField(
+                type=str,
+                default="Kwai-Kolors/Kolors",
+                description="SiliconFlow平台的具体模型名称"
+            ),
+            "default_size": ConfigField(
+                type=str,
+                default="1024x1024",
+                description="默认图片尺寸",
+                choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
+            ),
+            "seed": ConfigField(type=int, default=42, description="随机种子"),
+            "guidance_scale": ConfigField(type=float, default=7.5, description="SiliconFlow推荐的指导强度"),
+            "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
+            "custom_prompt_add": ConfigField(
+                type=str,
+                default=", high quality, detailed, masterpiece",
+                description="SiliconFlow附加提示词，支持英文描述"
+            ),
+            "negative_prompt_add": ConfigField(
+                type=str,
+                default="low quality, blurry, distorted, ugly",
+                description="SiliconFlow负面提示词"
+            ),
+        },
+        "models.model2": {
+            "name": ConfigField(type=str, default="魔搭潦草模型", description="模型显示名称"),
+            "base_url": ConfigField(
+                type=str,
+                default="https://api-inference.modelscope.cn/v1",
+                description="魔搭社区API的基础url",
+                required=True
+            ),
+            "api_key": ConfigField(
+                type=str,
+                default="Bearer xxxxxxxxxxxxxxxxxxxxxx",
+                description="魔搭社区API密钥，需要添加'Bearer '前缀",
+                required=True
+            ),
+            "format": ConfigField(
+                type=str,
+                default="openai",
+                description="API请求格式",
+                choices=["openai", "gemini", "siliconflow", "doubao"]
+            ),
+            "model": ConfigField(
+                type=str,
+                default="cancel13/liaocao",
+                description="具体的模型名称"
+            ),
+            "default_size": ConfigField(
+                type=str,
+                default="1024x1024",
+                description="默认图片尺寸",
+                choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
+            ),
+            "seed": ConfigField(type=int, default=42, description="随机种子"),
+            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
+            "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
+            "custom_prompt_add": ConfigField(
+                type=str,
+                default=",Nordic picture book art style, minimalist flat design, soft rounded lines, high saturation color blocks collision, dominant forest green and warm orange palette, low contrast lighting, hand-drawn pencil texture, healing fairy-tale atmosphere, geometric natural forms, ample white space composition, warm and clean aesthetic,liaocao\"#北欧绘本艺术风格，简约扁平设计，柔和圆润线条，高饱和度色块碰撞，森林绿与暖橙主色调，低对比度光影，手绘铅笔质感，治愈系童话氛围，几何化自然形态，留白构图，温暖干净画面",
+                description="正面附加提示词（因为为附加，开头需要添加一个英文逗号','，该参数不参与 LLM 模型转换，属于直接发送的参数，使用英文，使用词语和逗号的形式，不使用描述的原因为：为了确保提示词能够精准生效，防止 lora 关键词被替换。豆包可以直接使用中文句子作为提示词）。"
+            ),
+            "negative_prompt_add": ConfigField(
+                type=str,
+                default="Pornography,nudity,lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+                description="负面附加提示词，保持默认或使用豆包时可留空，留空时保持两个英文双引号，否则会报错。"
+            ),
+        },
+        "models.model3": {
+            "name": ConfigField(type=str, default="豆包图像模型", description="模型显示名称"),
+            "base_url": ConfigField(
+                type=str,
+                default="https://ark.cn-beijing.volces.com/api/v3",
+                description="豆包API的基础url",
+                required=True
+            ),
+            "api_key": ConfigField(
+                type=str,
+                default="Bearer xxxxxxxxxxxxxxxxxxxxxx",
+                description="豆包API密钥，需要Bearer前缀",
+                required=True
+            ),
+            "format": ConfigField(
+                type=str,
+                default="doubao",
+                description="API请求格式，使用豆包专用格式",
+                choices=["doubao", "openai", "gemini", "siliconflow"]
+            ),
+            "model": ConfigField(
+                type=str,
+                default="doubao-seedream-4-0-250828",
+                description="豆包具体的模型名称"
+            ),
+            "default_size": ConfigField(
+                type=str,
+                default="1024x1024",
+                description="默认图片尺寸",
+                choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
+            ),
+            "seed": ConfigField(type=int, default=42, description="随机种子"),
+            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
+            "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
+            "custom_prompt_add": ConfigField(
+                type=str,
+                default="",
+                description="豆包支持中文提示词，可以直接使用中文描述"
+            ),
+            "negative_prompt_add": ConfigField(
+                type=str,
+                default="",
+                description="豆包负面提示词，可留空"
+            ),
+        },
+        "models.model4": {
+            "name": ConfigField(type=str, default="GPT图像模型", description="模型显示名称"),
+            "base_url": ConfigField(
+                type=str,
+                default="https://apihk.unifyllm.top/v1/",
+                description="apihk 提供的 GPT API的基础url",
+                required=True
+            ),
+            "api_key": ConfigField(
+                type=str,
+                default="Bearer sk-xxxxxxxxxxxxxxxxxxxxxx",
+                description="API密钥，chatanywhere不需要Bearer前缀",
+                required=True
+            ),
+            "format": ConfigField(
+                type=str,
+                default="openai",
+                description="API请求格式",
+                choices=["openai", "gemini", "siliconflow", "doubao"]
+            ),
+            "model": ConfigField(
+                type=str,
+                default="gpt-image-1",
+                description="具体的模型名称"
+            ),
+            "default_size": ConfigField(
+                type=str,
+                default="1024x1024",
+                description="默认图片尺寸，GPT不支持512x512",
+                choices=["1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
+            ),
+            "seed": ConfigField(type=int, default=42, description="随机种子"),
+            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
+            "watermark": ConfigField(type=bool, default=False, description="是否添加水印"),
+            "custom_prompt_add": ConfigField(
+                type=str,
+                default=",masterpiece, best quality, high res, Japanese animation style, illustration,soft cinematic lighting, warm lighting from the side, muted color palette, intricate details, dynamic composition, detailed background,delicate colors, graceful composition, strong emotional tension",
+                description="GPT图像生成附加提示词"
+            ),
+            "negative_prompt_add": ConfigField(
+                type=str,
+                default="Pornography,nudity,lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+                description="GPT图像生成负面提示词"
+            ),
+        },
+        "models.model5": {
+            "name": ConfigField(type=str, default="gemini图像模型", description="模型显示名称"),
+            "base_url": ConfigField(
+                type=str,
+                default="https://apihk.unifyllm.top/v1beta/models/gemini-2.5-flash-image-preview:generateContent",
+                description="apihk 提供的 gemini API的基础url",
+                required=True
+            ),
+            "api_key": ConfigField(
+                type=str,
+                default="Bearer sk-xxxxxxxxxxxxxxxxxxxxxx",
+                description="API密钥，chatanywhere不需要Bearer前缀",
+                required=True
+            ),
+            "format": ConfigField(
+                type=str,
+                default="gemini",
+                description="API请求格式",
+                choices=["openai", "gemini", "siliconflow", "doubao"]
+            ),
+            "model": ConfigField(
+                type=str,
+                default="gemini-2.5-flash-image-preview",
+                description="具体的模型名称"
+            ),
+            "default_size": ConfigField(
+                type=str,
+                default="1024x1024",
+                description="默认图片尺寸，GPT不支持512x512",
+                choices=["1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
+            ),
+            "seed": ConfigField(type=int, default=42, description="随机种子"),
+            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
+            "watermark": ConfigField(type=bool, default=False, description="是否添加水印"),
+            "custom_prompt_add": ConfigField(
+                type=str,
+                default=",masterpiece, best quality, high res, Japanese animation style, illustration,soft cinematic lighting, warm lighting from the side, muted color palette, intricate details, dynamic composition, detailed background,delicate colors, graceful composition, strong emotional tension",
+                description="GPT图像生成附加提示词"
+            ),
+            "negative_prompt_add": ConfigField(
+                type=str,
+                default="Pornography,nudity,lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+                description="GPT图像生成负面提示词"
+            ),
         }
     }
 
