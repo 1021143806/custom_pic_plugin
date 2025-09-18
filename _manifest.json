@@ -1,8 +1,8 @@
 {
   "manifest_version": 1,
   "name": "自定义生图插件（custom_pic_plugin）",
-  "version": "2.1.2",
-  "description": "一个基于魔搭及第三方 api 的生图插件，根据 0.8.0 api 文档修改，魔搭平台是一个公益网址，可以免费调用各种 lora 画图模型。插件支持其他 api 格式，支持魔搭api、火山api、chatany api、apihk api（openai 格式 、gemini 格式） 。可自定义正面提示词、负面提示词，可指定图片大小或让麦麦自己决定，可以调用 lora 模型调整画风生图，需要有一定 AI 绘图基础，适合喜欢折腾的人。",
+  "version": "3.1.1",
+  "description": "一个基于魔搭及第三方 api 的生图插件，根据 0.8.0 api 文档修改，魔搭平台是一个公益网址，可以免费调用各种 lora 画图模型。插件支持其他 api 格式，支持硅基 api、魔搭 api、火山 api、chatany api、apihk api（openai 格式 、gemini 格式） 。可自定义正面提示词、负面提示词，可指定图片大小或让麦麦自己决定，可以调用 lora 模型调整画风生图，需要有一定 AI 绘图基础，适合喜欢折腾的人。支持配置多个模型",
   "author": {
     "name": "Ptrel",
     "url": "https://github.com/1021143806/custom_pic_plugin"
@@ -35,8 +35,9 @@
     "features": [
       "自定义画风",
       "高自由度模型",
-      "api自选",
-      "需要一定ai绘图能力"
+      "api 自选",
+      "需要一定ai绘图能力",
+      "多模型支持"
     ]
   }
 }
