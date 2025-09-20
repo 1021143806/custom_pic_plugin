@@ -12,9 +12,6 @@ from threading import Lock
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.base.base_action import BaseAction
 from src.plugin_system.base.component_types import ComponentInfo, ActionActivationType, ChatMode
-from src.plugin_system.base.config_types import ConfigField
-
-# 导入新插件系统
 from src.plugin_system import BasePlugin, register_plugin, ComponentInfo, ActionActivationType
 from src.plugin_system.base.config_types import ConfigField
 
@@ -177,15 +174,7 @@ class Custom_Pic_Action(BaseAction):
             )
 
         try:
-            if api_format == "siliconflow":
-                success, result = await asyncio.to_thread(
-                    self._make_siliconflow_request,
-                    prompt=description,
-                    model_config=model_config,
-                    size=image_size,
-                    guidance_scale=guidance_scale_val,
-                )
-            elif api_format == "doubao":
+            if api_format == "doubao":
                 success, result = await asyncio.to_thread(
                     self._make_doubao_request,
                     prompt=description,
@@ -275,63 +264,6 @@ class Custom_Pic_Action(BaseAction):
         
         return model_config or {}
 
-    def _make_siliconflow_request(self, prompt: str, model_config: Dict[str, Any], size: str, guidance_scale: float) -> Tuple[bool, str]:
-        """发送SiliconFlow格式的HTTP请求生成图片"""
-        base_url = model_config.get("base_url", "")
-        api_key = model_config.get("api_key", "")
-        model = model_config.get("model", "")
-
-        endpoint = f"{base_url.rstrip('/')}/images/generations"
-
-        # 获取模型特定的配置参数
-        custom_prompt_add = model_config.get("custom_prompt_add", "")
-        prompt_add = prompt + custom_prompt_add
-
-        payload = {
-            "model": model,
-            "prompt": prompt_add,
-            "image_size": size,  # SiliconFlow使用image_size而不是size
-            "batch_size": 1,
-            "num_inference_steps": 20,
-            "guidance_scale": guidance_scale
-        }
-
-        headers = {
-            "Authorization": api_key if api_key.startswith("Bearer ") else f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-
-        logger.info(f"{self.log_prefix} (SiliconFlow) 发起图片请求: {model}, Prompt: {prompt_add[:30]}... To: {endpoint}")
-
-        try:
-            with urllib.request.urlopen(req, timeout=600) as response:
-                response_body = response.read().decode("utf-8")
-                logger.info(f"{self.log_prefix} (SiliconFlow) 响应: {response.status}")
-
-                if 200 <= response.status < 300:
-                    response_data = json.loads(response_body)
-                    
-                    # 解析SiliconFlow响应格式
-                    if "images" in response_data and response_data["images"]:
-                        image_data = response_data["images"][0]
-                        if "url" in image_data:
-                            return True, image_data["url"]
-                        elif "b64_json" in image_data:
-                            return True, image_data["b64_json"]
-                    
-                    logger.error(f"{self.log_prefix} (SiliconFlow) 响应中未找到图片数据: {response_body[:300]}")
-                    return False, "API响应成功但未找到图片数据"
-                else:
-                    logger.error(f"{self.log_prefix} (SiliconFlow) API错误: {response.status} - {response_body[:300]}")
-                    return False, f"API请求失败(状态码 {response.status})"
-
-        except Exception as e:
-            logger.error(f"{self.log_prefix} (SiliconFlow) 请求异常: {e!r}", exc_info=True)
-            return False, f"请求过程中发生错误: {str(e)[:100]}"
-
     def _make_doubao_request(self, prompt: str, model_config: Dict[str, Any], size: str, watermark: bool) -> Tuple[bool, str]:
         """发送豆包格式的HTTP请求生成图片"""
         try:
@@ -376,46 +308,6 @@ class Custom_Pic_Action(BaseAction):
             logger.error(f"{self.log_prefix} (Doubao) 请求异常: {e!r}", exc_info=True)
             return False, f"豆包API请求失败: {str(e)[:100]}"
 
-    def _download_and_encode_base64(self, image_url: str) -> Tuple[bool, str]:
-        """下载图片并将其编码为Base64字符串"""
-        logger.info(f"{self.log_prefix} (B64) 下载并编码图片: {image_url[:70]}...")
-        try:
-            with urllib.request.urlopen(image_url, timeout=600) as response:
-                if response.status == 200:
-                    image_bytes = response.read()
-                    base64_encoded_image = base64.b64encode(image_bytes).decode("utf-8")
-                    logger.info(f"{self.log_prefix} (B64) 图片下载编码完成. Base64长度: {len(base64_encoded_image)}")
-                    return True, base64_encoded_image
-                else:
-                    error_msg = f"下载图片失败 (状态: {response.status})"
-                    logger.error(f"{self.log_prefix} (B64) {error_msg} URL: {image_url}")
-                    return False, error_msg
-        except Exception as e: 
-            logger.error(f"{self.log_prefix} (B64) 下载或编码时错误: {e!r}", exc_info=True)
-            traceback.print_exc()
-            return False, f"下载或编码图片时发生错误: {str(e)[:100]}"        
-        
-    @classmethod
-    def _get_cache_key(cls, description: str, model: str, size: str) -> str:
-        """生成缓存键"""
-        return f"{description[:100]}|{model}|{size}"
-
-    @classmethod
-    def _cleanup_cache(cls):
-        """清理缓存，保持大小在限制内"""
-        if len(cls._request_cache) > cls._cache_max_size:
-            keys_to_remove = list(cls._request_cache.keys())[: -cls._cache_max_size // 2]
-            for key in keys_to_remove:
-                del cls._request_cache[key]
-
-    def _validate_image_size(self, image_size: str) -> bool:
-        """验证图片尺寸格式"""
-        try:
-            width, height = map(int, image_size.split("x"))
-            return 100 <= width <= 10000 and 100 <= height <= 10000
-        except (ValueError, TypeError):
-            return False
-
     def _make_openai_image_request(
         self, prompt: str, model_config: Dict[str, Any], size: str, seed: int | None, guidance_scale: float, watermark: bool
     ) -> Tuple[bool, str]:
@@ -432,16 +324,28 @@ class Custom_Pic_Action(BaseAction):
 
         prompt_add = prompt + custom_prompt_add
         negative_prompt = negative_prompt_add
-
-        payload_dict = {
-            "model": model,
-            "prompt": prompt_add,
-            "negative_prompt": negative_prompt,
-            "size": size,
-            "guidance_scale": guidance_scale,
-            "seed": seed,
-            "api-key": generate_api_key,
-        }
+        if base_url == "https://ark.cn-beijing.volces.com/api/v3": #豆包火山方舟
+            payload_dict = {
+                "model": model,
+                "prompt": prompt_add,
+                "negative_prompt": negative_prompt,
+                "size": size,
+                #"guidance_scale": guidance_scale,
+                "seed": seed,
+                "api-key": generate_api_key,
+                "watermark": watermark
+            }
+        else :#默认魔搭等其他
+            payload_dict = {
+                "model": model,
+                "prompt": prompt_add,  # 使用附加的正面提示词
+                "negative_prompt": negative_prompt,
+                "size": size,  # 固定size
+                "guidance_scale": guidance_scale,#豆包会报错
+                "seed": seed,  # seed is now always an int from process()
+                "api-key": generate_api_key
+                #"watermark": watermark#其他请求不需要发送水印
+            }
 
         data = json.dumps(payload_dict).encode("utf-8")
         headers = {
@@ -741,156 +645,6 @@ class CustomPicPlugin(BasePlugin):
                 description="负面附加提示词，保持默认或使用豆包时可留空，留空时保持两个英文双引号，否则会报错。"
             ),
         },
-        "models.model3": {
-            "name": ConfigField(type=str, default="豆包图像模型", description="模型显示名称"),
-            "base_url": ConfigField(
-                type=str,
-                default="https://ark.cn-beijing.volces.com/api/v3",
-                description="豆包API的基础url",
-                required=True
-            ),
-            "api_key": ConfigField(
-                type=str,
-                default="Bearer xxxxxxxxxxxxxxxxxxxxxx",
-                description="豆包API密钥，需要Bearer前缀",
-                required=True
-            ),
-            "format": ConfigField(
-                type=str,
-                default="doubao",
-                description="API请求格式，使用豆包专用格式",
-                choices=["doubao", "openai", "gemini", "siliconflow"]
-            ),
-            "model": ConfigField(
-                type=str,
-                default="doubao-seedream-4-0-250828",
-                description="豆包具体的模型名称"
-            ),
-            "fixed_size_enable": ConfigField(
-                type=bool,
-                default= False,
-                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
-            ),
-            "default_size": ConfigField(
-                type=str,
-                default="1024x1024",
-                description="默认图片尺寸",
-                choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-            ),
-            "seed": ConfigField(type=int, default=42, description="随机种子"),
-            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
-            "watermark": ConfigField(type=bool, default=True, description="是否添加水印"),
-            "custom_prompt_add": ConfigField(
-                type=str,
-                default="",
-                description="豆包支持中文提示词，可以直接使用中文描述"
-            ),
-            "negative_prompt_add": ConfigField(
-                type=str,
-                default="",
-                description="豆包负面提示词，可留空"
-            ),
-        },
-        "models.model4": {
-            "name": ConfigField(type=str, default="GPT图像模型", description="模型显示名称"),
-            "base_url": ConfigField(
-                type=str,
-                default="https://apihk.unifyllm.top/v1/",
-                description="apihk 提供的 GPT API的基础url",
-                required=True
-            ),
-            "api_key": ConfigField(
-                type=str,
-                default="Bearer sk-xxxxxxxxxxxxxxxxxxxxxx",
-                description="API密钥，chatanywhere不需要Bearer前缀",
-                required=True
-            ),
-            "format": ConfigField(
-                type=str,
-                default="openai",
-                description="API请求格式",
-                choices=["openai", "gemini", "siliconflow", "doubao"]
-            ),
-            "model": ConfigField(
-                type=str,
-                default="gpt-image-1",
-                description="具体的模型名称"
-            ),
-            "fixed_size_enable": ConfigField(
-                type=bool,
-                default= True,
-                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
-            ),
-            "default_size": ConfigField(
-                type=str,
-                default="1024x1024",
-                description="默认图片尺寸，GPT不支持512x512",
-                choices=["1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-            ),
-            "seed": ConfigField(type=int, default=42, description="随机种子"),
-            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
-            "watermark": ConfigField(type=bool, default=False, description="是否添加水印"),
-            "custom_prompt_add": ConfigField(
-                type=str,
-                default=",masterpiece, best quality, high res, Japanese animation style, illustration,soft cinematic lighting, warm lighting from the side, muted color palette, intricate details, dynamic composition, detailed background,delicate colors, graceful composition, strong emotional tension",
-                description="GPT图像生成附加提示词"
-            ),
-            "negative_prompt_add": ConfigField(
-                type=str,
-                default="Pornography,nudity,lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
-                description="GPT图像生成负面提示词"
-            ),
-        },
-        "models.model5": {
-            "name": ConfigField(type=str, default="gemini图像模型", description="模型显示名称"),
-            "base_url": ConfigField(
-                type=str,
-                default="https://apihk.unifyllm.top/v1beta/models/gemini-2.5-flash-image-preview:generateContent",
-                description="apihk 提供的 gemini API的基础url",
-                required=True
-            ),
-            "api_key": ConfigField(
-                type=str,
-                default="Bearer sk-xxxxxxxxxxxxxxxxxxxxxx",
-                description="API密钥，chatanywhere不需要Bearer前缀",
-                required=True
-            ),
-            "format": ConfigField(
-                type=str,
-                default="gemini",
-                description="API请求格式",
-                choices=["openai", "gemini", "siliconflow", "doubao"]
-            ),
-            "model": ConfigField(
-                type=str,
-                default="gemini-2.5-flash-image-preview",
-                description="具体的模型名称"
-            ),
-            "fixed_size_enable": ConfigField(
-                type=bool,
-                default= False,
-                description="是否启用固定图片大小，启用后只会发配置文件中定义的大小，否则会由麦麦自己选择。（gpt-image-1 生图模型不支持 512 大小图片，需要固定 1024x1024）"
-            ),
-            "default_size": ConfigField(
-                type=str,
-                default="1024x1024",
-                description="默认图片尺寸，GPT不支持512x512",
-                choices=["1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
-            ),
-            "seed": ConfigField(type=int, default=42, description="随机种子"),
-            "guidance_scale": ConfigField(type=float, default=2.5, description="模型指导强度"),
-            "watermark": ConfigField(type=bool, default=False, description="是否添加水印"),
-            "custom_prompt_add": ConfigField(
-                type=str,
-                default=",masterpiece, best quality, high res, Japanese animation style, illustration,soft cinematic lighting, warm lighting from the side, muted color palette, intricate details, dynamic composition, detailed background,delicate colors, graceful composition, strong emotional tension",
-                description="GPT图像生成附加提示词"
-            ),
-            "negative_prompt_add": ConfigField(
-                type=str,
-                default="Pornography,nudity,lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
-                description="GPT图像生成负面提示词"
-            ),
-        }
     }
 
     def get_plugin_components(self) -> List[Tuple[ComponentInfo, Type]]:
