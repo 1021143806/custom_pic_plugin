@@ -967,7 +967,7 @@ class Custom_Pic_Action(BaseAction):
             logger.error(f"{self.log_prefix} (Doubao) 请求异常: {e!r}", exc_info=True)
             return False, f"豆包API请求失败: {str(e)[:100]}"
 
-    def _make_openai_image_request(self, prompt: str, model_config: Dict[str, Any], size: str, seed: int | None, guidance_scale: float, watermark: bool) -> Tuple[bool, str]:
+    def _make_openai_image_request(self, prompt: str, model_config: Dict[str, Any], size: str, strength: float = None, input_image_base64: str = None) -> Tuple[bool, str]:
         """发送OpenAI格式的HTTP请求生成图片"""
         base_url = model_config.get("base_url", "")
         generate_api_key = model_config.get("api_key", "")
@@ -978,31 +978,45 @@ class Custom_Pic_Action(BaseAction):
         # 获取模型特定的配置参数
         custom_prompt_add = model_config.get("custom_prompt_add", "")
         negative_prompt_add = model_config.get("negative_prompt_add", "")
+        seed = model_config.get("seed", 42)
+        guidance_scale = model_config.get("guidance_scale", 2.5)
+        watermark = model_config.get("watermark", True)
 
         prompt_add = prompt + custom_prompt_add
         negative_prompt = negative_prompt_add
+
+        # 构建基本请求参数
+        payload_dict = {
+            "model": model,
+            "prompt": prompt_add,
+            "negative_prompt": negative_prompt,
+            "size": size,
+            "seed": seed,
+            "api-key": generate_api_key
+        }
+
+        # 如果有输入图片，添加图生图参数
+        if input_image_base64:
+            if not input_image_base64.startswith('data:image'):
+                # 检测图片格式
+                if input_image_base64.startswith('/9j/'):
+                    image_data_uri = f"data:image/jpeg;base64,{input_image_base64}"
+                elif input_image_base64.startswith('iVBORw'):
+                    image_data_uri = f"data:image/png;base64,{input_image_base64}"
+                else:
+                    image_data_uri = f"data:image/jpeg;base64,{input_image_base64}"
+            else:
+                image_data_uri = input_image_base64
+
+            payload_dict["image"] = image_data_uri
+            if strength is not None:
+                payload_dict["strength"] = strength
+
+        # 根据不同API添加特定参数
         if base_url == "https://ark.cn-beijing.volces.com/api/v3": #豆包火山方舟
-            payload_dict = {
-                "model": model,
-                "prompt": prompt_add,
-                "negative_prompt": negative_prompt,
-                "size": size,
-                #"guidance_scale": guidance_scale,
-                "seed": seed,
-                "api-key": generate_api_key,
-                "watermark": watermark
-            }
-        else :#默认魔搭等其他
-            payload_dict = {
-                "model": model,
-                "prompt": prompt_add,  # 使用附加的正面提示词
-                "negative_prompt": negative_prompt,
-                "size": size,  # 固定size
-                "guidance_scale": guidance_scale,#豆包会报错
-                "seed": seed,  # seed is now always an int from process()
-                "api-key": generate_api_key
-                #"watermark": watermark#其他请求不需要发送水印
-            }
+            payload_dict["watermark"] = watermark
+        else: #默认魔搭等其他
+            payload_dict["guidance_scale"] = guidance_scale
 
         data = json.dumps(payload_dict).encode("utf-8")
         headers = {
@@ -1069,7 +1083,7 @@ class Custom_Pic_Action(BaseAction):
             traceback.print_exc()
             return False, f"图片生成HTTP请求时发生意外错误: {str(e)[:100]}"
 
-    def _make_modelscope_request(self, prompt: str, model_config: Dict[str, Any], input_image_base64: str = None) -> Tuple[bool, str]:
+    def _make_modelscope_request(self, prompt: str, model_config: Dict[str, Any], size: str = None, strength: float = None, input_image_base64: str = None) -> Tuple[bool, str]:
         """发送魔搭格式的HTTP请求生成图片"""
         try:
             import requests
@@ -1080,6 +1094,11 @@ class Custom_Pic_Action(BaseAction):
             api_key = model_config.get("api_key", "").replace("Bearer ", "")
             model_name = model_config.get("model", "MusePublic/489_ckpt_FLUX_1")
             base_url = model_config.get("base_url", "https://api-inference.modelscope.cn").rstrip('/')
+
+            # 验证API密钥
+            if not api_key or api_key in ["xxxxxxxxxxxxxx", "YOUR_API_KEY_HERE"]:
+                logger.error(f"{self.log_prefix} (魔搭) API密钥未配置或无效")
+                return False, "魔搭API密钥未配置，请在配置文件中设置正确的API密钥"
         
             # 请求头
             headers = {
