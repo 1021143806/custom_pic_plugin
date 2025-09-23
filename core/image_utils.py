@@ -23,8 +23,16 @@ class ImageProcessor:
         try:
             logger.debug(f"{self.log_prefix} 开始获取图片消息")
 
-            # 检查当前Action消息是否包含图片
-            if self.action.has_action_message and self.action.action_message:
+            # 检查是否有action_message或message对象（兼容Action和Command）
+            action_message = None
+            if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
+                # Action组件
+                action_message = self.action.action_message
+            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
+                # Command组件，使用message.message_recv作为action_message
+                action_message = self.action.message.message_recv
+
+            if action_message:
                 logger.debug(f"{self.log_prefix} 检查action_message是否包含图片")
 
                 # 1. 检查是否是回复消息，并尝试获取被回复的图片
@@ -66,8 +74,16 @@ class ImageProcessor:
                         logger.info(f"{self.log_prefix} 从message_content获取图片")
                         return self._process_image_data(message_content)
 
-            # 尝试从chat_stream获取最近的图片消息
-            if self.action.chat_stream:
+            # 尝试从chat_stream获取最近的图片消息（兼容Action和Command）
+            chat_stream = None
+            if hasattr(self.action, 'chat_stream') and self.action.chat_stream:
+                # Action组件
+                chat_stream = self.action.chat_stream
+            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
+                # Command组件
+                chat_stream = self.action.message.chat_stream
+
+            if chat_stream:
                 logger.debug(f"{self.log_prefix} 尝试从chat_stream获取历史图片消息")
 
                 try:
@@ -98,18 +114,29 @@ class ImageProcessor:
                 except Exception as e:
                     logger.debug(f"{self.log_prefix} 从chat_stream获取历史消息失败: {e}")
 
-            # 最后尝试：使用插件系统的消息API
+            # 最后尝试：使用插件系统的消息API（兼容Action和Command）
             try:
                 from src.plugin_system.apis import message_api
-                # 使用正确的API获取最近消息
-                recent_messages = message_api.get_recent_messages(self.action.chat_id, hours=1.0, limit=20, filter_mai=True)
-                logger.debug(f"{self.log_prefix} 从message_api获取到 {len(recent_messages)} 条消息")
 
-                for msg in reversed(recent_messages):
-                    image_data = await self._extract_image_from_message(msg)
-                    if image_data:
-                        logger.info(f"{self.log_prefix} 从message_api获取图片")
-                        return image_data
+                # 获取chat_id - 兼容Action和Command
+                chat_id = None
+                if hasattr(self.action, 'chat_id'):
+                    # Action组件
+                    chat_id = self.action.chat_id
+                elif chat_stream and hasattr(chat_stream, 'stream_id'):
+                    # 从chat_stream获取
+                    chat_id = chat_stream.stream_id
+
+                if chat_id:
+                    # 使用正确的API获取最近消息
+                    recent_messages = message_api.get_recent_messages(chat_id, hours=1.0, limit=20, filter_mai=True)
+                    logger.debug(f"{self.log_prefix} 从message_api获取到 {len(recent_messages)} 条消息")
+
+                    for msg in reversed(recent_messages):
+                        image_data = await self._extract_image_from_message(msg)
+                        if image_data:
+                            logger.info(f"{self.log_prefix} 从message_api获取图片")
+                            return image_data
 
             except Exception as e:
                 logger.debug(f"{self.log_prefix} 使用message_api获取消息失败: {e}")
@@ -124,7 +151,14 @@ class ImageProcessor:
     def _is_reply_message(self) -> bool:
         """检测当前消息是否是回复消息"""
         try:
-            if not self.action.action_message:
+            # 获取action_message（兼容Action和Command）
+            action_message = None
+            if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
+                action_message = self.action.action_message
+            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
+                action_message = self.action.message.message_recv
+
+            if not action_message:
                 return False
 
             # 检查多种可能的回复消息字段
@@ -133,11 +167,11 @@ class ImageProcessor:
                 'message_content', 'content', 'text'
             ]
 
-            if isinstance(self.action.action_message, dict):
+            if isinstance(action_message, dict):
                 # 字典类型的action_message
                 for field in potential_fields:
-                    if field in self.action.action_message:
-                        text = str(self.action.action_message[field])
+                    if field in action_message:
+                        text = str(action_message[field])
                         # 检查是否包含回复格式的文本
                         if text and ('[回复' in text or 'reply' in text.lower() or '回复' in text):
                             logger.debug(f"{self.log_prefix} 在字段 {field} 中检测到回复消息格式")
@@ -146,14 +180,14 @@ class ImageProcessor:
                 # 检查是否有reply相关的字段
                 reply_fields = ['reply_to', 'reply_message', 'quoted_message', 'reply']
                 for field in reply_fields:
-                    if field in self.action.action_message and self.action.action_message[field]:
+                    if field in action_message and action_message[field]:
                         logger.debug(f"{self.log_prefix} 检测到回复字段: {field}")
                         return True
             else:
                 # DatabaseMessages 对象
                 for field in potential_fields:
-                    if hasattr(self.action.action_message, field):
-                        text = str(getattr(self.action.action_message, field, ''))
+                    if hasattr(action_message, field):
+                        text = str(getattr(action_message, field, ''))
                         # 检查是否包含回复格式的文本
                         if text and ('[回复' in text or 'reply' in text.lower() or '回复' in text):
                             logger.debug(f"{self.log_prefix} 在属性 {field} 中检测到回复消息格式")
@@ -162,7 +196,7 @@ class ImageProcessor:
                 # 检查是否有reply相关的属性
                 reply_fields = ['reply_to', 'reply_message', 'quoted_message', 'reply']
                 for field in reply_fields:
-                    if hasattr(self.action.action_message, field) and getattr(self.action.action_message, field, None):
+                    if hasattr(action_message, field) and getattr(action_message, field, None):
                         logger.debug(f"{self.log_prefix} 检测到回复属性: {field}")
                         return True
 
@@ -175,18 +209,25 @@ class ImageProcessor:
     async def _get_image_from_reply(self) -> Optional[str]:
         """从回复消息中获取被回复的图片"""
         try:
-            if not self.action.action_message:
+            # 获取action_message（兼容Action和Command）
+            action_message = None
+            if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
+                action_message = self.action.action_message
+            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
+                action_message = self.action.message.message_recv
+
+            if not action_message:
                 return None
 
             # 1. 处理reply_to字段 - 这是最重要的
             reply_to = None
-            if isinstance(self.action.action_message, dict):
-                if 'reply_to' in self.action.action_message and self.action.action_message['reply_to']:
-                    reply_to = self.action.action_message['reply_to']
+            if isinstance(action_message, dict):
+                if 'reply_to' in action_message and action_message['reply_to']:
+                    reply_to = action_message['reply_to']
             else:
                 # DatabaseMessages 对象
-                if hasattr(self.action.action_message, 'reply_to') and getattr(self.action.action_message, 'reply_to', None):
-                    reply_to = getattr(self.action.action_message, 'reply_to')
+                if hasattr(action_message, 'reply_to') and getattr(action_message, 'reply_to', None):
+                    reply_to = getattr(action_message, 'reply_to')
 
             if reply_to:
                 logger.info(f"{self.log_prefix} 发现reply_to字段: {reply_to}")
@@ -211,41 +252,54 @@ class ImageProcessor:
                 # 如果直接查询失败，在历史消息中搜索
                 try:
                     from src.plugin_system.apis import message_api
-                    # 获取更多历史消息来查找被回复的消息
-                    recent_messages = message_api.get_recent_messages(self.action.chat_id, hours=2.0, limit=50, filter_mai=True)
-                    logger.debug(f"{self.log_prefix} 获取 {len(recent_messages)} 条消息查找reply_to: {reply_to}")
 
-                    for msg in recent_messages:
-                        # 检查消息ID匹配
-                        msg_id = None
-                        is_picid = False
+                    # 获取chat_id - 兼容Action和Command
+                    chat_id = None
+                    if hasattr(self.action, 'chat_id'):
+                        # Action组件
+                        chat_id = self.action.chat_id
+                    elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
+                        # Command组件
+                        chat_stream = self.action.message.chat_stream
+                        if chat_stream and hasattr(chat_stream, 'stream_id'):
+                            chat_id = chat_stream.stream_id
 
-                        if isinstance(msg, dict):
-                            msg_id = msg.get('message_id') or msg.get('id')
-                            is_picid = msg.get('is_picid', False)
-                        else:
-                            # DatabaseMessages 对象
-                            msg_id = getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
-                            is_picid = getattr(msg, 'is_picid', False)
+                        if chat_id:
+                            # 获取更多历史消息来查找被回复的消息
+                            recent_messages = message_api.get_recent_messages(chat_id, hours=2.0, limit=50, filter_mai=True)
+                            logger.debug(f"{self.log_prefix} 获取 {len(recent_messages)} 条消息查找reply_to: {reply_to}")
 
-                        if str(msg_id) == str(reply_to):
-                            logger.info(f"{self.log_prefix} 在历史消息中找到被回复的消息: {msg_id}")
-                            # 检查这条消息是否包含图片
-                            if is_picid:
-                                image_data = await self._extract_image_from_message(msg)
-                                if image_data:
-                                    logger.info(f"{self.log_prefix} 从reply_to消息获取图片成功")
-                                    return image_data
+                            for msg in recent_messages:
+                                # 检查消息ID匹配
+                                msg_id = None
+                                is_picid = False
+
+                                if isinstance(msg, dict):
+                                    msg_id = msg.get('message_id') or msg.get('id')
+                                    is_picid = msg.get('is_picid', False)
+                                else:
+                                    # DatabaseMessages 对象
+                                    msg_id = getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
+                                    is_picid = getattr(msg, 'is_picid', False)
+
+                                if str(msg_id) == str(reply_to):
+                                    logger.info(f"{self.log_prefix} 在历史消息中找到被回复的消息: {msg_id}")
+                                    # 检查这条消息是否包含图片
+                                    if is_picid:
+                                        image_data = await self._extract_image_from_message(msg)
+                                        if image_data:
+                                            logger.info(f"{self.log_prefix} 从reply_to消息获取图片成功")
+                                            return image_data
 
                 except Exception as e:
                     logger.debug(f"{self.log_prefix} 通过reply_to查找消息失败: {e}")
 
             # 2. 尝试从回复相关字段直接获取
             reply_fields = ['reply_message', 'quoted_message', 'reply']
-            if isinstance(self.action.action_message, dict):
+            if isinstance(action_message, dict):
                 for field in reply_fields:
-                    if field in self.action.action_message and self.action.action_message[field]:
-                        reply_data = self.action.action_message[field]
+                    if field in action_message and action_message[field]:
+                        reply_data = action_message[field]
                         image_data = await self._extract_image_from_message(reply_data)
                         if image_data:
                             logger.info(f"{self.log_prefix} 从{field}字段获取回复图片")
@@ -253,8 +307,8 @@ class ImageProcessor:
             else:
                 # DatabaseMessages 对象
                 for field in reply_fields:
-                    if hasattr(self.action.action_message, field) and getattr(self.action.action_message, field, None):
-                        reply_data = getattr(self.action.action_message, field)
+                    if hasattr(action_message, field) and getattr(action_message, field, None):
+                        reply_data = getattr(action_message, field)
                         image_data = await self._extract_image_from_message(reply_data)
                         if image_data:
                             logger.info(f"{self.log_prefix} 从{field}属性获取回复图片")
@@ -262,10 +316,10 @@ class ImageProcessor:
 
             # 3. 解析回复格式的文本消息，提取被回复消息的ID或信息
             text_fields = ['processed_plain_text', 'display_message', 'raw_message', 'message_content']
-            if isinstance(self.action.action_message, dict):
+            if isinstance(action_message, dict):
                 for field in text_fields:
-                    if field in self.action.action_message:
-                        text = str(self.action.action_message[field])
+                    if field in action_message:
+                        text = str(action_message[field])
                         if '[回复' in text and '[图片]' in text:
                             logger.debug(f"{self.log_prefix} 在{field}中发现回复图片格式: {text[:100]}...")
 
@@ -277,8 +331,8 @@ class ImageProcessor:
             else:
                 # DatabaseMessages 对象
                 for field in text_fields:
-                    if hasattr(self.action.action_message, field):
-                        text = str(getattr(self.action.action_message, field, ''))
+                    if hasattr(action_message, field):
+                        text = str(getattr(action_message, field, ''))
                         if '[回复' in text and '[图片]' in text:
                             logger.debug(f"{self.log_prefix} 在{field}属性中发现回复图片格式: {text[:100]}...")
 
@@ -291,38 +345,51 @@ class ImageProcessor:
             # 4. 作为备选方案，查找最近的图片消息（扩大搜索范围）
             try:
                 from src.plugin_system.apis import message_api
-                # 扩大搜索范围到100条消息，2小时内
-                recent_messages = message_api.get_recent_messages(self.action.chat_id, hours=2.0, limit=100, filter_mai=True)
-                logger.debug(f"{self.log_prefix} 扩大搜索范围，获取最近 {len(recent_messages)} 条消息查找图片")
 
-                for msg in reversed(recent_messages):
-                    # 跳过当前消息
-                    current_msg_id = None
-                    msg_id = None
-                    is_picid = False
+                # 获取chat_id - 兼容Action和Command
+                chat_id = None
+                if hasattr(self.action, 'chat_id'):
+                    # Action组件
+                    chat_id = self.action.chat_id
+                elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
+                    # Command组件
+                    chat_stream = self.action.message.chat_stream
+                    if chat_stream and hasattr(chat_stream, 'stream_id'):
+                        chat_id = chat_stream.stream_id
 
-                    if hasattr(self.action.action_message, 'get'):
-                        current_msg_id = self.action.action_message.get('message_id') or self.action.action_message.get('id')
-                    else:
-                        current_msg_id = getattr(self.action.action_message, 'message_id', None) or getattr(self.action.action_message, 'id', None)
+                if chat_id:
+                    # 扩大搜索范围到100条消息，2小时内
+                    recent_messages = message_api.get_recent_messages(chat_id, hours=2.0, limit=100, filter_mai=True)
+                    logger.debug(f"{self.log_prefix} 扩大搜索范围，获取最近 {len(recent_messages)} 条消息查找图片")
 
-                    if isinstance(msg, dict):
-                        msg_id = msg.get('message_id') or msg.get('id')
-                        is_picid = msg.get('is_picid', False)
-                    else:
-                        # DatabaseMessages 对象
-                        msg_id = getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
-                        is_picid = getattr(msg, 'is_picid', False)
+                    for msg in reversed(recent_messages):
+                        # 跳过当前消息
+                        current_msg_id = None
+                        msg_id = None
+                        is_picid = False
 
-                    if str(msg_id) == str(current_msg_id):
-                        continue
+                        if isinstance(action_message, dict):
+                            current_msg_id = action_message.get('message_id') or action_message.get('id')
+                        else:
+                            current_msg_id = getattr(action_message, 'message_id', None) or getattr(action_message, 'id', None)
 
-                    # 查找图片消息
-                    if is_picid:
-                        image_data = await self._extract_image_from_message(msg)
-                        if image_data:
-                            logger.info(f"{self.log_prefix} 从扩大范围的历史消息中找到图片")
-                            return image_data
+                        if isinstance(msg, dict):
+                            msg_id = msg.get('message_id') or msg.get('id')
+                            is_picid = msg.get('is_picid', False)
+                        else:
+                            # DatabaseMessages 对象
+                            msg_id = getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
+                            is_picid = getattr(msg, 'is_picid', False)
+
+                        if str(msg_id) == str(current_msg_id):
+                            continue
+
+                        # 查找图片消息
+                        if is_picid:
+                            image_data = await self._extract_image_from_message(msg)
+                            if image_data:
+                                logger.info(f"{self.log_prefix} 从扩大范围的历史消息中找到图片")
+                                return image_data
 
             except Exception as e:
                 logger.debug(f"{self.log_prefix} 扩大范围查找图片消息失败: {e}")
