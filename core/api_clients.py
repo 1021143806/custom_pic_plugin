@@ -249,10 +249,16 @@ class ApiClient:
                 "X-ModelScope-Async-Mode": "true"
             }
 
+            logger.info(f"{self.log_prefix} (魔搭) 使用模型: {model_name}, API地址: {base_url}")
+
+            # 添加额外的提示词前缀（魔搭可能需要）
+            custom_prompt_add = model_config.get("custom_prompt_add", "")
+            full_prompt = prompt + custom_prompt_add
+
             # 构建请求数据
             request_data = {
                 "model": model_name,
-                "prompt": prompt
+                "prompt": full_prompt
             }
 
             # 如果有输入图片，需要特殊处理
@@ -282,7 +288,7 @@ class ApiClient:
                 data=json.dumps(request_data, ensure_ascii=False).encode('utf-8'),
                 timeout=30
             )
-
+        
             if response.status_code != 200:
                 error_msg = response.text
                 logger.error(f"{self.log_prefix} (魔搭) 请求失败: HTTP {response.status_code} - {error_msg}")
@@ -293,7 +299,7 @@ class ApiClient:
             if "task_id" not in task_response:
                 logger.error(f"{self.log_prefix} (魔搭) 未获取到任务ID: {task_response}")
                 return False, "未获取到任务ID"
-
+        
             task_id = task_response["task_id"]
             logger.info(f"{self.log_prefix} (魔搭) 获得任务ID: {task_id}，开始轮询结果")
 
@@ -301,7 +307,7 @@ class ApiClient:
             check_headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "X-ModelScope-Async-Mode": "true"
+                "X-ModelScope-Task-Type": "image_generation"
             }
 
             max_attempts = 24  # 最多检查2分钟
@@ -312,17 +318,18 @@ class ApiClient:
                         headers=check_headers,
                         timeout=10
                     )
-
+                
                     if check_response.status_code != 200:
                         logger.warning(f"{self.log_prefix} (魔搭) 状态检查失败: HTTP {check_response.status_code}")
                         continue
+                
                     result_data = check_response.json()
                     task_status = result_data.get("task_status", "UNKNOWN")
-
+                
                     if task_status == "SUCCEED":
                         if "output_images" in result_data and result_data["output_images"]:
                             image_url = result_data["output_images"][0]
-
+                        
                             # 下载图片并转换为base64
                             try:
                                 img_response = requests.get(image_url, timeout=30)
@@ -340,30 +347,30 @@ class ApiClient:
                         else:
                             logger.error(f"{self.log_prefix} (魔搭) 未找到生成的图片")
                             return False, "未找到生成的图片"
-
+            
                     elif task_status == "FAILED":
                         error_msg = result_data.get("error_message", "任务执行失败")
                         logger.error(f"{self.log_prefix} (魔搭) 任务失败: {error_msg}")
                         return False, f"任务执行失败: {error_msg}"
-
+            
                     elif task_status in ["PENDING", "RUNNING"]:
                         logger.info(f"{self.log_prefix} (魔搭) 任务状态: {task_status}，等待中...")
                         time.sleep(5)
                         continue
-
+            
                     else:
                         logger.warning(f"{self.log_prefix} (魔搭) 未知任务状态: {task_status}")
                         time.sleep(5)
                         continue
-
+                
                 except Exception as e:
                     logger.warning(f"{self.log_prefix} (魔搭) 状态检查异常: {e}")
                     time.sleep(5)
                     continue
-
+    
             logger.error(f"{self.log_prefix} (魔搭) 任务超时，未能在规定时间内完成")
             return False, "任务执行超时"
-
+    
         except Exception as e:
             logger.error(f"{self.log_prefix} (魔搭) 请求异常: {e!r}", exc_info=True)
             return False, f"请求失败: {str(e)}"
@@ -415,7 +422,7 @@ class ApiClient:
                             "data": clean_base64
                         }
                     })
-
+                
                 except Exception as e:
                     logger.error(f"{self.log_prefix} (Gemini) 图片处理失败: {e}")
                     return False, f"图片处理失败: {str(e)}"
@@ -428,10 +435,10 @@ class ApiClient:
                     "parts": parts
                 }],
                 "generationConfig": {
-                    "responseModalities": ["TEXT", "IMAGE"]
+                    "responseModalities": ["TEXT", "IMAGE"]  # 关键配置
                 }
             }
-
+        
             logger.info(f"{self.log_prefix} (Gemini) 发起图片请求: {model_name}")
 
             # 发送请求
@@ -474,7 +481,7 @@ class ApiClient:
                     error_message = error_info.get("message", "未知错误")
                     logger.error(f"{self.log_prefix} (Gemini) API返回错误: {error_message}")
                     return False, f"API错误: {error_message}"
-
+            
                 logger.warning(f"{self.log_prefix} (Gemini) 未找到图片数据")
                 return False, "未收到图片数据，可能模型不支持图片生成或请求格式不正确"
             
