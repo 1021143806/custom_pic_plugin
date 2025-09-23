@@ -6,6 +6,7 @@ from src.plugin_system import register_plugin
 from src.plugin_system.base.config_types import ConfigField
 
 from .core.pic_action import Custom_Pic_Action
+from .core.pic_command import PicGenerationCommand
 
 @register_plugin
 class CustomPicPlugin(BasePlugin):
@@ -51,11 +52,27 @@ class CustomPicPlugin(BasePlugin):
         },
         "components": {
             "enable_unified_generation": ConfigField(type=bool, default=True, description="是否启用统一图片生成Action"),
+            "enable_pic_command": ConfigField(type=bool, default=True, description="是否启用图生图Command功能，支持通过命令进行图生图"),
+            "pic_command_model": ConfigField(type=str, default="model1", description="Command组件使用的模型ID，可以设置为model1、model2等任意已配置的模型"),
             "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示，开启后会在聊天中显示生图参数")
         },
         "logging": {
             "level": ConfigField(type=str, default="INFO", description="日志记录级别", choices=["DEBUG", "INFO", "WARNING", "ERROR"]),
             "prefix": ConfigField(type=str, default="[unified_pic_Plugin]", description="日志记录前缀")
+        },
+        "styles": {
+            "cartoon": ConfigField(
+                type=str,
+                default="cartoon style, anime style, colorful, vibrant colors, clean lines",
+                description="卡通风格提示词示例。可以添加更多风格，TOML格式: oil_painting = \"oil painting style\""
+            )
+        },
+        "style_aliases": {
+            "cartoon": ConfigField(
+                type=str,
+                default="卡通",
+                description="风格别名映射，格式: 英文键名 = \"中文别名\"。支持一对多映射，用逗号分隔多个别名。支持添加更多别名"
+            )
         },
         "models": {},
         # 基础模型配置
@@ -116,9 +133,13 @@ class CustomPicPlugin(BasePlugin):
     def get_plugin_components(self) -> List[Tuple[ComponentInfo, Type]]:
         """返回插件包含的组件列表"""
         enable_unified_generation = self.get_config("components.enable_unified_generation", True)
+        enable_pic_command = self.get_config("components.enable_pic_command", True)
         components = []
 
         if enable_unified_generation:
             components.append((Custom_Pic_Action.get_action_info(), Custom_Pic_Action))
+
+        if enable_pic_command:
+            components.append((PicGenerationCommand.get_command_info(), PicGenerationCommand))
 
         return components
