@@ -5,7 +5,9 @@ import urllib.request
 import traceback
 import re
 import os
-from typing import Optional, Tuple
+from functools import lru_cache
+from typing import Optional, Tuple, Dict, Any, Union
+from concurrent.futures import ThreadPoolExecutor
 
 from src.common.logger import get_logger
 
@@ -14,23 +16,145 @@ logger = get_logger("pic_action")
 class ImageProcessor:
     """图片处理工具类"""
 
+    # 图片格式检测模式
+    _image_format_patterns = {
+        'jpeg': ['/9j/', '\xff\xd8\xff'],
+        'png': ['iVBORw', '\x89PNG'],
+        'webp': ['UklGR', 'RIFF'],
+        'gif': ['R0lGOD', 'GIF8']
+    }
+
     def __init__(self, action_instance):
         self.action = action_instance
         self.log_prefix = action_instance.log_prefix
+
+        # 使用实例级别的失败缓存，避免跨实例状态共享问题
+        self._failed_picids_cache = {}
+        self._max_failed_cache_size = 500
+
+    def _is_picid_failed(self, picid: str) -> bool:
+        """检查picid是否在失败缓存中"""
+        return picid in self._failed_picids_cache
+
+    async def _check_paths_concurrently(self, picid: str) -> Optional[str]:
+        """并发检查多个可能的文件路径"""
+        possible_paths = [
+            f"data/images/{picid}.jpg",
+            f"data/images/{picid}.png",
+            f"data/images/{picid}.jpeg",
+            f"data/images/{picid}.webp",
+            f"images/{picid}.jpg",
+            f"images/{picid}.png",
+            f"images/{picid}.jpeg",
+            f"images/{picid}.webp",
+            f"temp/images/{picid}.jpg",
+            f"temp/images/{picid}.png"
+        ]
+
+        def check_single_path(path: str) -> Optional[str]:
+            """检查单个路径并返回base64数据"""
+            try:
+                if os.path.exists(path):
+                    from src.chat.utils.utils_image import image_path_to_base64
+                    base64_data = image_path_to_base64(path)
+                    if base64_data:
+                        logger.info(f"{self.log_prefix} 通过路径 {path} 获取图片成功")
+                        return base64_data
+            except (FileNotFoundError, IOError) as e:
+                logger.debug(f"{self.log_prefix} 读取路径 {path} 失败: {e}")
+            except Exception as e:
+                logger.debug(f"{self.log_prefix} 检查路径 {path} 异常: {e}")
+            return None
+
+        # 使用线程池并发检查所有路径
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            loop = asyncio.get_event_loop()
+            futures = [loop.run_in_executor(executor, check_single_path, path) for path in possible_paths]
+
+            # 等待第一个成功的结果
+            for future in asyncio.as_completed(futures):
+                try:
+                    result = await future
+                    if result:
+                        # 取消其他任务
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
+                        return result
+                except Exception as e:
+                    logger.debug(f"{self.log_prefix} 并发检查路径异常: {e}")
+                    continue
+
+        return None
+
+    def _mark_picid_failed(self, picid: str):
+        """将picid标记为失败，使用LRU缓存机制"""
+        import time
+        self._failed_picids_cache[picid] = time.time()
+
+        # LRU清理机制
+        if len(self._failed_picids_cache) > self._max_failed_cache_size:
+            # 按时间排序，移除最旧的条目
+            sorted_items = sorted(self._failed_picids_cache.items(), key=lambda x: x[1])
+            items_to_remove = len(sorted_items) - self._max_failed_cache_size // 2
+            for i in range(items_to_remove):
+                del self._failed_picids_cache[sorted_items[i][0]]
+
+    def _get_action_message(self) -> Optional[Any]:
+        """获取action_message对象，兼容Action和Command"""
+        if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
+            # Action组件
+            return self.action.action_message
+        elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
+            # Command组件，使用message.message_recv作为action_message
+            return self.action.message.message_recv
+        return None
+
+    def _get_chat_stream(self) -> Optional[Any]:
+        """获取chat_stream对象，兼容Action和Command"""
+        if hasattr(self.action, 'chat_stream') and self.action.chat_stream:
+            # Action组件
+            return self.action.chat_stream
+        elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
+            # Command组件
+            return self.action.message.chat_stream
+        return None
+
+    def _get_chat_id(self) -> Optional[str]:
+        """获取chat_id，兼容Action和Command"""
+        if hasattr(self.action, 'chat_id'):
+            # Action组件
+            return self.action.chat_id
+
+        chat_stream = self._get_chat_stream()
+        if chat_stream and hasattr(chat_stream, 'stream_id'):
+            return chat_stream.stream_id
+        return None
+
+    def _safe_execute(self, func, *args, **kwargs):
+        """安全执行函数，统一异常处理"""
+        try:
+            return func(*args, **kwargs)
+        except (FileNotFoundError, IOError) as e:
+            logger.debug(f"{self.log_prefix} 文件操作失败: {str(e)[:50]}")
+            return None
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug(f"{self.log_prefix} 数据解析失败: {str(e)[:50]}")
+            return None
+        except (AttributeError, TypeError) as e:
+            logger.debug(f"{self.log_prefix} 类型或属性错误: {str(e)[:50]}")
+            return None
+        except Exception as e:
+            logger.warning(f"{self.log_prefix} 未知异常: {str(e)[:50]}")
+            return None
 
     async def get_recent_image(self) -> Optional[str]:
         """获取最近的图片消息"""
         try:
             logger.debug(f"{self.log_prefix} 开始获取图片消息")
 
-            # 检查是否有action_message或message对象（兼容Action和Command）
-            action_message = None
-            if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
-                # Action组件
-                action_message = self.action.action_message
-            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
-                # Command组件，使用message.message_recv作为action_message
-                action_message = self.action.message.message_recv
+            # 获取action_message对象（兼容Action和Command）
+            action_message = self._get_action_message()
 
             if action_message:
                 logger.debug(f"{self.log_prefix} 检查action_message是否包含图片")
@@ -42,6 +166,9 @@ class ImageProcessor:
                     if reply_image:
                         logger.info(f"{self.log_prefix} 从回复消息获取图片成功")
                         return reply_image
+                    else:
+                        logger.info(f"{self.log_prefix} 回复消息中未找到有效图片，跳过其他搜索")
+                        return None
 
                 # 2. 检查action_message中的图片信息
                 images_data = None
@@ -57,7 +184,9 @@ class ImageProcessor:
 
                 if images_data:
                     logger.info(f"{self.log_prefix} 从action_message获取图片")
-                    return self._process_image_data(images_data)
+                    processed_data = self._process_image_data(images_data)
+                    if processed_data:
+                        return processed_data
 
                 # 3. 检查message_content中的图片
                 message_content = None
@@ -72,16 +201,23 @@ class ImageProcessor:
                 if message_content:
                     if isinstance(message_content, str) and self._is_image_data(message_content):
                         logger.info(f"{self.log_prefix} 从message_content获取图片")
-                        return self._process_image_data(message_content)
+                        processed_data = self._process_image_data(message_content)
+                        if processed_data:
+                            return processed_data
+
+            # 检查是否是Command组件 - Command组件需要搜索历史图片
+            is_command_component = hasattr(self.action, 'command_name')
+
+            if is_command_component:
+                # Command组件：即使不是回复消息也要搜索历史图片
+                logger.info(f"{self.log_prefix} Command组件检测：当前消息无图片且非回复消息，继续搜索历史图片")
+            else:
+                # Action组件：如果既不是回复消息，当前消息也没有图片，则认为是文生图，不搜索历史
+                logger.info(f"{self.log_prefix} 当前消息无图片且非回复消息，跳过历史图片搜索")
+                return None
 
             # 尝试从chat_stream获取最近的图片消息（兼容Action和Command）
-            chat_stream = None
-            if hasattr(self.action, 'chat_stream') and self.action.chat_stream:
-                # Action组件
-                chat_stream = self.action.chat_stream
-            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
-                # Command组件
-                chat_stream = self.action.message.chat_stream
+            chat_stream = self._get_chat_stream()
 
             if chat_stream:
                 logger.debug(f"{self.log_prefix} 尝试从chat_stream获取历史图片消息")
@@ -119,13 +255,7 @@ class ImageProcessor:
                 from src.plugin_system.apis import message_api
 
                 # 获取chat_id - 兼容Action和Command
-                chat_id = None
-                if hasattr(self.action, 'chat_id'):
-                    # Action组件
-                    chat_id = self.action.chat_id
-                elif chat_stream and hasattr(chat_stream, 'stream_id'):
-                    # 从chat_stream获取
-                    chat_id = chat_stream.stream_id
+                chat_id = self._get_chat_id()
 
                 if chat_id:
                     # 使用正确的API获取最近消息
@@ -152,53 +282,46 @@ class ImageProcessor:
         """检测当前消息是否是回复消息"""
         try:
             # 获取action_message（兼容Action和Command）
-            action_message = None
-            if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
-                action_message = self.action.action_message
-            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
-                action_message = self.action.message.message_recv
+            action_message = self._get_action_message()
 
             if not action_message:
                 return False
 
-            # 检查多种可能的回复消息字段
-            potential_fields = [
-                'raw_message', 'processed_plain_text', 'display_message',
-                'message_content', 'content', 'text'
-            ]
-
+            # 优先检查结构化的回复字段
+            reply_fields = ['reply_to', 'reply_message', 'quoted_message', 'reply']
             if isinstance(action_message, dict):
-                # 字典类型的action_message
-                for field in potential_fields:
-                    if field in action_message:
-                        text = str(action_message[field])
-                        # 检查是否包含回复格式的文本
-                        if text and ('[回复' in text or 'reply' in text.lower() or '回复' in text):
-                            logger.debug(f"{self.log_prefix} 在字段 {field} 中检测到回复消息格式")
-                            return True
-
-                # 检查是否有reply相关的字段
-                reply_fields = ['reply_to', 'reply_message', 'quoted_message', 'reply']
                 for field in reply_fields:
                     if field in action_message and action_message[field]:
-                        logger.debug(f"{self.log_prefix} 检测到回复字段: {field}")
+                        logger.debug(f"{self.log_prefix} 检测到回复字段: {field} = {action_message[field]}")
                         return True
             else:
                 # DatabaseMessages 对象
-                for field in potential_fields:
-                    if hasattr(action_message, field):
-                        text = str(getattr(action_message, field, ''))
-                        # 检查是否包含回复格式的文本
-                        if text and ('[回复' in text or 'reply' in text.lower() or '回复' in text):
-                            logger.debug(f"{self.log_prefix} 在属性 {field} 中检测到回复消息格式")
-                            return True
-
-                # 检查是否有reply相关的属性
-                reply_fields = ['reply_to', 'reply_message', 'quoted_message', 'reply']
                 for field in reply_fields:
                     if hasattr(action_message, field) and getattr(action_message, field, None):
-                        logger.debug(f"{self.log_prefix} 检测到回复属性: {field}")
+                        reply_value = getattr(action_message, field)
+                        logger.debug(f"{self.log_prefix} 检测到回复属性: {field} = {reply_value}")
                         return True
+
+            # 其次检查文本内容中的回复格式（更精确的匹配）
+            text_fields = ['processed_plain_text', 'display_message', 'raw_message', 'message_content']
+
+            if isinstance(action_message, dict):
+                for field in text_fields:
+                    if field in action_message:
+                        text = str(action_message[field])
+                        # 更精确的回复格式检测
+                        if text and ('[回复' in text and ']' in text):
+                            logger.debug(f"{self.log_prefix} 在字段 {field} 中检测到回复消息格式")
+                            return True
+            else:
+                # DatabaseMessages 对象
+                for field in text_fields:
+                    if hasattr(action_message, field):
+                        text = str(getattr(action_message, field, ''))
+                        # 更精确的回复格式检测
+                        if text and ('[回复' in text and ']' in text):
+                            logger.debug(f"{self.log_prefix} 在属性 {field} 中检测到回复消息格式")
+                            return True
 
             return False
 
@@ -210,11 +333,7 @@ class ImageProcessor:
         """从回复消息中获取被回复的图片"""
         try:
             # 获取action_message（兼容Action和Command）
-            action_message = None
-            if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
-                action_message = self.action.action_message
-            elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
-                action_message = self.action.message.message_recv
+            action_message = self._get_action_message()
 
             if not action_message:
                 return None
@@ -254,42 +373,34 @@ class ImageProcessor:
                     from src.plugin_system.apis import message_api
 
                     # 获取chat_id - 兼容Action和Command
-                    chat_id = None
-                    if hasattr(self.action, 'chat_id'):
-                        # Action组件
-                        chat_id = self.action.chat_id
-                    elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
-                        # Command组件
-                        chat_stream = self.action.message.chat_stream
-                        if chat_stream and hasattr(chat_stream, 'stream_id'):
-                            chat_id = chat_stream.stream_id
+                    chat_id = self._get_chat_id()
 
-                        if chat_id:
-                            # 获取更多历史消息来查找被回复的消息
-                            recent_messages = message_api.get_recent_messages(chat_id, hours=2.0, limit=50, filter_mai=True)
-                            logger.debug(f"{self.log_prefix} 获取 {len(recent_messages)} 条消息查找reply_to: {reply_to}")
+                    if chat_id:
+                        # 获取更多历史消息来查找被回复的消息
+                        recent_messages = message_api.get_recent_messages(chat_id, hours=2.0, limit=50, filter_mai=True)
+                        logger.debug(f"{self.log_prefix} 获取 {len(recent_messages)} 条消息查找reply_to: {reply_to}")
 
-                            for msg in recent_messages:
-                                # 检查消息ID匹配
-                                msg_id = None
-                                is_picid = False
+                        for msg in recent_messages:
+                            # 检查消息ID匹配
+                            msg_id = None
+                            is_picid = False
 
-                                if isinstance(msg, dict):
-                                    msg_id = msg.get('message_id') or msg.get('id')
-                                    is_picid = msg.get('is_picid', False)
-                                else:
-                                    # DatabaseMessages 对象
-                                    msg_id = getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
-                                    is_picid = getattr(msg, 'is_picid', False)
+                            if isinstance(msg, dict):
+                                msg_id = msg.get('message_id') or msg.get('id')
+                                is_picid = msg.get('is_picid', False)
+                            else:
+                                # DatabaseMessages 对象
+                                msg_id = getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
+                                is_picid = getattr(msg, 'is_picid', False)
 
-                                if str(msg_id) == str(reply_to):
-                                    logger.info(f"{self.log_prefix} 在历史消息中找到被回复的消息: {msg_id}")
-                                    # 检查这条消息是否包含图片
-                                    if is_picid:
-                                        image_data = await self._extract_image_from_message(msg)
-                                        if image_data:
-                                            logger.info(f"{self.log_prefix} 从reply_to消息获取图片成功")
-                                            return image_data
+                            if str(msg_id) == str(reply_to):
+                                logger.info(f"{self.log_prefix} 在历史消息中找到被回复的消息: {msg_id}")
+                                # 检查这条消息是否包含图片
+                                if is_picid:
+                                    image_data = await self._extract_image_from_message(msg)
+                                    if image_data:
+                                        logger.info(f"{self.log_prefix} 从reply_to消息获取图片成功")
+                                        return image_data
 
                 except Exception as e:
                     logger.debug(f"{self.log_prefix} 通过reply_to查找消息失败: {e}")
@@ -347,15 +458,7 @@ class ImageProcessor:
                 from src.plugin_system.apis import message_api
 
                 # 获取chat_id - 兼容Action和Command
-                chat_id = None
-                if hasattr(self.action, 'chat_id'):
-                    # Action组件
-                    chat_id = self.action.chat_id
-                elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
-                    # Command组件
-                    chat_stream = self.action.message.chat_stream
-                    if chat_stream and hasattr(chat_stream, 'stream_id'):
-                        chat_id = chat_stream.stream_id
+                chat_id = self._get_chat_id()
 
                 if chat_id:
                     # 扩大搜索范围到100条消息，2小时内
@@ -512,7 +615,7 @@ class ImageProcessor:
             return None
 
         except Exception as e:
-            logger.debug(f"{self.log_prefix} 从消息提取图片失败: {e}")
+            logger.debug(f"{self.log_prefix} 从消息提取图片失败: {str(e)[:50]}")
             return None
 
     def _extract_image_from_segment(self, segment) -> Optional[str]:
@@ -541,7 +644,7 @@ class ImageProcessor:
             return None
 
         except Exception as e:
-            logger.debug(f"{self.log_prefix} 从消息段提取图片失败: {e}")
+            logger.debug(f"{self.log_prefix} 从消息段提取图片失败: {str(e)[:50]}")
             return None
 
     async def _extract_base64_from_text(self, text: str) -> Optional[str]:
@@ -554,17 +657,30 @@ class ImageProcessor:
             if self._is_image_data(text):
                 return self._process_image_data(text)
 
-            # 检查是否包含picid格式 [picid:xxxxx]
-            picid_pattern = r'\[picid:([a-f0-9\-]+)\]'
-            picid_match = re.search(picid_pattern, text)
-            if picid_match:
-                picid = picid_match.group(1)
-                logger.info(f"{self.log_prefix} 找到picid: {picid}")
+            # 增强的picid格式匹配，支持更多变体
+            picid_patterns = [
+                r'\[picid:([a-f0-9\-]+)\]',  # 标准格式
+                r'\[pic:([a-f0-9\-]+)\]',   # 简化格式
+                r'\[image:([a-f0-9\-]+)\]', # 其他变体
+                r'\[img:([a-f0-9\-]+)\]',   # 简称变体
+                r'picid:([a-f0-9\-]+)',      # 无括号版本
+                r'pic_id[:：]([a-f0-9\-]+)', # 下划线版本
+                r'image_id[:：]([a-f0-9\-]+)' # 其他变体
+            ]
 
-                # 尝试通过picid获取图片数据
-                image_data = await self._get_image_by_picid(picid)
-                if image_data:
-                    return image_data
+            for pattern in picid_patterns:
+                picid_match = re.search(pattern, text, re.IGNORECASE)
+                if picid_match:
+                    picid = picid_match.group(1)
+                    logger.info(f"{self.log_prefix} 找到picid: {picid[:8]}... (模式: {pattern})")  # 只显示部分ID
+
+                    # 尝试通过picid获取图片数据
+                    image_data = await self._get_image_by_picid(picid)
+                    if image_data:
+                        return image_data
+                    else:
+                        logger.warning(f"{self.log_prefix} picid {picid[:8]}... 无法获取图片数据，跳过后续处理")
+                        return None
 
             # 尝试从可能的JSON格式中提取
             try:
@@ -580,69 +696,81 @@ class ImageProcessor:
                         result = await self._extract_base64_from_text(str(item))
                         if result:
                             return result
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug(f"{self.log_prefix} JSON解析失败: {str(e)[:50]}")
 
             return None
 
         except Exception as e:
-            logger.debug(f"{self.log_prefix} 从文本提取base64失败: {e}")
+            logger.debug(f"{self.log_prefix} 从文本提取base64失败: {str(e)[:50]}")
             return None
 
     async def _get_image_by_picid(self, picid: str) -> Optional[str]:
-        """通过picid获取图片的base64数据"""
+        """通过picid获取图片的base64数据，避免重复尝试失败的picid"""
         try:
-            # 尝试从图片管理器获取图片
-            from src.chat.utils.utils_image import get_image_manager
+            # 检查picid格式有效性
+            if not picid or len(picid) < 10:  # 基本格式检查
+                logger.warning(f"{self.log_prefix} picid格式无效: {picid}")
+                return None
 
-            image_manager = get_image_manager()
-            if hasattr(image_manager, 'get_image_by_id'):
-                image_data = await image_manager.get_image_by_id(picid)
-                if image_data:
-                    return image_data
+            # 检查是否已经尝试过且失败的picid (使用LRU缓存)
+            if self._is_picid_failed(picid):
+                logger.debug(f"{self.log_prefix} picid {picid[:8]}... 已在失败缓存中，跳过")
+                return None
+
+            # 尝试从图片管理器获取图片
+            try:
+                from src.chat.utils.utils_image import get_image_manager
+                image_manager = get_image_manager()
+                if hasattr(image_manager, 'get_image_by_id'):
+                    image_data = await image_manager.get_image_by_id(picid)
+                    if image_data:
+                        logger.info(f"{self.log_prefix} 通过图片管理器获取picid {picid} 成功")
+                        return image_data
+            except Exception as e:
+                logger.debug(f"{self.log_prefix} 图片管理器获取失败: {e}")
 
             # 尝试从数据库直接获取
-            from src.common.database.database_model import Images
             try:
+                from src.common.database.database_model import Images
                 # 查找对应的图片记录
                 image_record = Images.select().where(Images.id == picid).first()
-                if image_record and image_record.path:
-                    # 从路径读取图片并转换为base64
-                    from src.chat.utils.utils_image import image_path_to_base64
-                    base64_data = image_path_to_base64(image_record.path)
-                    if base64_data:
-                        logger.info(f"{self.log_prefix} 通过picid从数据库获取图片成功")
-                        return base64_data
+                if image_record and hasattr(image_record, 'path') and image_record.path:
+                    # 检查文件是否存在
+                    if os.path.exists(image_record.path):
+                        try:
+                            # 从路径读取图片并转换为base64
+                            from src.chat.utils.utils_image import image_path_to_base64
+                            base64_data = image_path_to_base64(image_record.path)
+                            if base64_data:
+                                logger.info(f"{self.log_prefix} 通过picid从数据库获取图片成功")
+                                return base64_data
+                        except (FileNotFoundError, IOError) as e:
+                            logger.debug(f"{self.log_prefix} 读取图片文件失败: {e}")
+                    else:
+                        logger.debug(f"{self.log_prefix} 图片文件不存在: {image_record.path}")
+                else:
+                    logger.debug(f"{self.log_prefix} 数据库中未找到picid {picid} 对应的记录或路径为空")
             except Exception as e:
                 logger.debug(f"{self.log_prefix} 从数据库获取图片失败: {e}")
 
-            # 如果上述方法都失败，尝试构造路径
-            # MaiBot可能将图片存储在特定目录
-            possible_paths = [
-                f"/tmp/images/{picid}",
-                f"/tmp/images/{picid}.jpg",
-                f"/tmp/images/{picid}.png",
-                f"data/images/{picid}",
-                f"data/images/{picid}.jpg",
-                f"data/images/{picid}.png",
-                f"images/{picid}",
-                f"images/{picid}.jpg",
-                f"images/{picid}.png"
-            ]
+            # 使用并发方式检查文件系统路径，提高效率
+            try:
+                base64_data = await self._check_paths_concurrently(picid)
+                if base64_data:
+                    return base64_data
+            except Exception as e:
+                logger.debug(f"{self.log_prefix} 并发文件系统查找失败: {e}")
 
-            for path in possible_paths:
-                if os.path.exists(path):
-                    from src.chat.utils.utils_image import image_path_to_base64
-                    base64_data = image_path_to_base64(path)
-                    if base64_data:
-                        logger.info(f"{self.log_prefix} 通过路径 {path} 获取图片成功")
-                        return base64_data
-
-            logger.warning(f"{self.log_prefix} 无法通过picid {picid} 获取图片数据")
+            logger.warning(f"{self.log_prefix} 无法通过picid {picid[:8]}... 获取图片数据")
+            # 将失败的picid加入LRU缓存
+            self._mark_picid_failed(picid)
             return None
 
         except Exception as e:
-            logger.error(f"{self.log_prefix} 通过picid获取图片异常: {e!r}")
+            logger.error(f"{self.log_prefix} 通过picid获取图片异常: {str(e)[:100]}")
+            # 异常情况也加入失败缓存
+            self._mark_picid_failed(picid)
             return None
 
     def _process_image_data(self, data) -> Optional[str]:
@@ -671,7 +799,7 @@ class ImageProcessor:
             return None
 
         except Exception as e:
-            logger.debug(f"{self.log_prefix} 处理图片数据失败: {e}")
+            logger.debug(f"{self.log_prefix} 处理图片数据失败: {str(e)[:50]}")
             return None
 
     def _is_image_data(self, data: str) -> bool:
@@ -690,7 +818,7 @@ class ImageProcessor:
 
     def download_and_encode_base64(self, image_url: str) -> Tuple[bool, str]:
         """下载图片并将其编码为Base64字符串"""
-        logger.info(f"{self.log_prefix} (B64) 下载并编码图片: {image_url[:70]}...")
+        logger.info(f"{self.log_prefix} (B64) 下载并编码图片: {image_url[:50]}...")
         try:
             with urllib.request.urlopen(image_url, timeout=600) as response:
                 if response.status == 200:
@@ -700,12 +828,12 @@ class ImageProcessor:
                     return True, base64_encoded_image
                 else:
                     error_msg = f"下载图片失败 (状态: {response.status})"
-                    logger.error(f"{self.log_prefix} (B64) {error_msg} URL: {image_url}")
+                    logger.error(f"{self.log_prefix} (B64) {error_msg} URL: {image_url[:30]}...")
                     return False, error_msg
         except Exception as e: 
             logger.error(f"{self.log_prefix} (B64) 下载或编码时错误: {e!r}", exc_info=True)
             traceback.print_exc()
-            return False, f"下载或编码图片时发生错误: {str(e)[:100]}"
+            return False, f"下载或编码图片时发生错误: {str(e)[:50]}"
 
     def process_api_response(self, result) -> Optional[str]:
         """统一处理API响应，提取图片数据"""
@@ -731,5 +859,5 @@ class ImageProcessor:
 
             return None
         except Exception as e:
-            logger.error(f"{self.log_prefix} 处理API响应失败: {e!r}")
+            logger.error(f"{self.log_prefix} 处理API响应失败: {str(e)[:50]}")
             return None

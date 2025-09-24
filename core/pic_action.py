@@ -124,6 +124,13 @@ class Custom_Pic_Action(BaseAction):
         is_img2img_mode = input_image_base64 is not None
 
         if is_img2img_mode:
+            # 检查指定模型是否支持图生图
+            model_config = self._get_model_config(model_id)
+            if model_config and not model_config.get("support_img2img", True):
+                logger.warning(f"{self.log_prefix} 模型 {model_id} 不支持图生图，转为文生图模式")
+                await self.send_text(f"当前模型 {model_id} 不支持图生图功能，将为您生成新图片")
+                return await self._execute_unified_generation(description, model_id, size, None, None)
+
             logger.info(f"{self.log_prefix} 检测到输入图片，使用图生图模式")
             return await self._execute_unified_generation(description, model_id, size, strength, input_image_base64)
         else:
@@ -178,7 +185,9 @@ class Custom_Pic_Action(BaseAction):
 
         if cached_result:
             logger.info(f"{self.log_prefix} 使用缓存的图片结果")
-            await self.send_text("我之前画过类似的图片，用之前的结果~")
+            enable_debug = self.get_config("components.enable_debug_info", False)
+            if enable_debug:
+                await self.send_text("我之前画过类似的图片，用之前的结果~")
             send_success = await self.send_image(cached_result)
             if send_success:
                 return True, "图片已发送(缓存)"
@@ -216,7 +225,8 @@ class Custom_Pic_Action(BaseAction):
                     send_success = await self.send_image(final_image_data)
                     if send_success:
                         mode_text = "图生图" if is_img2img else "文生图"
-                        await self.send_text(f"{mode_text}完成！")
+                        if enable_debug:
+                            await self.send_text(f"{mode_text}完成！")
                         # 缓存成功的结果
                         self.cache_manager.cache_result(description, model_name, image_size, strength, is_img2img, final_image_data)
                         return True, f"{mode_text}已成功生成并发送"
@@ -232,7 +242,8 @@ class Custom_Pic_Action(BaseAction):
                             send_success = await self.send_image(encode_result)
                             if send_success:
                                 mode_text = "图生图" if is_img2img else "文生图"
-                                await self.send_text(f"{mode_text}完成！")
+                                if enable_debug:
+                                    await self.send_text(f"{mode_text}完成！")
                                 # 缓存成功结果
                                 self.cache_manager.cache_result(description, model_name, image_size, strength, is_img2img, encode_result)
                                 return True, f"{mode_text}已完成"

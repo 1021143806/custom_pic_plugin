@@ -122,6 +122,8 @@ class ApiClient:
         base_url = model_config.get("base_url", "")
         generate_api_key = model_config.get("api_key", "")
         model = model_config.get("model", "")
+
+        # 直接拼接路径，base_url应该包含完整的API版本路径
         endpoint = f"{base_url.rstrip('/')}/images/generations"
 
         # 获取模型特定的配置参数
@@ -130,6 +132,7 @@ class ApiClient:
         seed = model_config.get("seed", 42)
         guidance_scale = model_config.get("guidance_scale", 2.5)
         watermark = model_config.get("watermark", True)
+        num_inference_steps = model_config.get("num_inference_steps", 20)
         prompt_add = prompt + custom_prompt_add
         negative_prompt = negative_prompt_add
 
@@ -165,6 +168,7 @@ class ApiClient:
             payload_dict["watermark"] = watermark
         else: #默认魔搭等其他
             payload_dict["guidance_scale"] = guidance_scale
+            payload_dict["num_inference_steps"] = num_inference_steps
 
         data = json.dumps(payload_dict).encode("utf-8")
         headers = {
@@ -255,10 +259,16 @@ class ApiClient:
             custom_prompt_add = model_config.get("custom_prompt_add", "")
             full_prompt = prompt + custom_prompt_add
 
+            # 获取其他配置参数
+            guidance_scale = model_config.get("guidance_scale", 2.5)
+            num_inference_steps = model_config.get("num_inference_steps", 20)
+
             # 构建请求数据
             request_data = {
                 "model": model_name,
-                "prompt": full_prompt
+                "prompt": full_prompt,
+                "guidance_scale": guidance_scale,
+                "num_inference_steps": num_inference_steps
             }
 
             # 如果有输入图片，需要特殊处理
@@ -281,9 +291,12 @@ class ApiClient:
 
             logger.info(f"{self.log_prefix} (魔搭) 发起异步图片生成请求，模型: {model_name}")
 
+            # 直接拼接路径，base_url应该包含完整的API版本路径
+            endpoint = f"{base_url.rstrip('/')}/images/generations"
+
             # 发送异步请求
             response = requests.post(
-                f"{base_url}/v1/images/generations",
+                endpoint,
                 headers=headers,
                 data=json.dumps(request_data, ensure_ascii=False).encode('utf-8'),
                 timeout=30
