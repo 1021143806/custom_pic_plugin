@@ -6,10 +6,11 @@ import traceback
 import re
 import os
 from functools import lru_cache
-from typing import Optional, Tuple, Dict, Any, Union
+from typing import Optional, Tuple, Dict, Any, Union, List
 from concurrent.futures import ThreadPoolExecutor
 
 from src.common.logger import get_logger
+from maim_message import Seg
 
 logger = get_logger("pic_action")
 
@@ -57,532 +58,114 @@ class ImageProcessor:
         """判断是否为Command组件"""
         return hasattr(self.action, 'message')
 
-    async def get_recent_image(self) -> Optional[str]:
-        """获取最近的图片消息"""
-        try:
-            logger.debug(f"{self.log_prefix} 开始获取图片消息")
+    async def get_recent_image(self, max_retries: int = 3) -> Optional[str]:
+        """获取最近的图片消息，支持多种组件类型和重试机制"""
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    logger.info(f"{self.log_prefix} 图片获取重试第 {attempt} 次")
+                    await asyncio.sleep(0.2 * attempt)  # 渐进式等待时间
 
-            # Command组件：直接从message.message_segment获取
-            if self._is_command_component():
-                logger.debug(f"{self.log_prefix} Command组件：检查message_segment")
-                return await self._get_image_from_command()
+                logger.debug(f"{self.log_prefix} 开始获取图片消息（尝试 {attempt + 1}/{max_retries + 1}）")
 
-            # Action组件：从action_message获取
-            if self._is_action_component():
-                logger.debug(f"{self.log_prefix} Action组件：检查action_message")
-                return await self._get_image_from_action()
+                # 方法1：从当前消息的message_segment中检索（最优先）
+                message_segments = None
 
-            logger.warning(f"{self.log_prefix} 无法识别组件类型")
-            return None
+                # 兼容Action和Command组件
+                if hasattr(self.action, 'message') and hasattr(self.action.message, 'message_segment'):
+                    # Command组件
+                    message_segments = self.action.message.message_segment
+                elif hasattr(self.action, 'action_message') and hasattr(self.action.action_message, 'message_segment'):
+                    # Action组件
+                    message_segments = self.action.action_message.message_segment
 
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 获取图片失败: {e!r}", exc_info=True)
-            return None
+                if message_segments:
+                    # 使用emoji插件的检索功能
+                    emoji_base64_list = self.find_and_return_emoji_in_message(message_segments)
+                    if emoji_base64_list:
+                        logger.info(f"{self.log_prefix} 在当前消息中找到 {len(emoji_base64_list)} 张图片")
+                        if attempt > 0:
+                            logger.info(f"{self.log_prefix} 图片获取重试第 {attempt} 次成功")
+                        return emoji_base64_list[0]  # 返回第一张图片
 
-    async def _get_image_from_command(self) -> Optional[str]:
-        """从Command组件获取图片"""
-        try:
-            # 首先检查当前消息的message_segment
-            message_segments = self.action.message.message_segment
-            if message_segments:
-                image_data = await self._extract_image_from_segments(message_segments)
-                if image_data:
-                    logger.info(f"{self.log_prefix} 从Command组件的message_segment获取图片成功")
-                    return image_data
-
-            # 如果当前消息没有图片，搜索历史消息
-            logger.info(f"{self.log_prefix} Command组件：当前消息无图片，搜索历史图片")
-            return await self._get_image_from_history()
-
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 从Command组件获取图片失败: {e!r}")
-            return None
-
-    async def _get_image_from_action(self) -> Optional[str]:
-        """从Action组件获取图片"""
-        try:
-            # 检查是否有action_message
-            if not self.action.has_action_message:
-                logger.info(f"{self.log_prefix} Action组件：无action_message，跳过历史搜索")
-                return None
-
-            action_message = self.action.action_message
-
-            # 首先检查是否是回复消息
-            if await self._is_reply_message(action_message):
-                logger.info(f"{self.log_prefix} Action组件：检测到回复消息，尝试获取被回复的图片")
-                reply_image = await self._get_image_from_reply(action_message)
-                if reply_image:
-                    logger.info(f"{self.log_prefix} Action组件：从回复消息获取图片成功")
-                    return reply_image
-                else:
-                    logger.info(f"{self.log_prefix} Action组件：回复消息中未找到图片，继续检查当前消息")
-
-            # 检查action_message中的图片信息
-            if isinstance(action_message, dict):
-                # 字典格式
-                if "images" in action_message and action_message["images"]:
-                    images_data = action_message["images"][0]
-                    processed_data = self._process_image_data(images_data)
-                    if processed_data:
-                        logger.info(f"{self.log_prefix} 从action_message获取图片")
-                        return processed_data
-
-                if "message_content" in action_message:
-                    message_content = action_message["message_content"]
-                    if isinstance(message_content, str) and self._is_image_data(message_content):
-                        logger.info(f"{self.log_prefix} 从message_content获取图片")
-                        return self._process_image_data(message_content)
-            else:
-                # DatabaseMessages对象
-                images_list = getattr(action_message, 'images', None)
-                if images_list:
-                    images_data = images_list[0] if isinstance(images_list, list) else images_list
-                    processed_data = self._process_image_data(images_data)
-                    if processed_data:
-                        logger.info(f"{self.log_prefix} 从action_message获取图片")
-                        return processed_data
-
-                message_content = getattr(action_message, 'message_content', None)
-                if message_content and isinstance(message_content, str) and self._is_image_data(message_content):
-                    logger.info(f"{self.log_prefix} 从message_content获取图片")
-                    return self._process_image_data(message_content)
-
-            # Action组件不搜索历史图片（用于文生图场景）
-            logger.info(f"{self.log_prefix} Action组件：当前消息无图片，认为是文生图场景")
-            return None
-
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 从Action组件获取图片失败: {e!r}")
-            return None
-
-    async def _get_image_from_history(self) -> Optional[str]:
-        """从历史消息中获取图片"""
-        try:
-            # 通过chat_stream获取
-            chat_stream = self._get_chat_stream()
-            if chat_stream:
-                logger.debug(f"{self.log_prefix} 尝试从chat_stream获取历史图片消息")
-
+                # 方法2：从历史消息中查找（作为后备）
                 try:
-                    # 获取最近的消息历史
-                    if hasattr(chat_stream, 'get_recent_messages'):
-                        recent_messages = chat_stream.get_recent_messages(10)
-                        logger.debug(f"{self.log_prefix} 获取到 {len(recent_messages)} 条历史消息")
+                    from src.plugin_system.apis import message_api
+
+                    # 获取chat_id
+                    chat_id = self._get_chat_id()
+                    if chat_id:
+                        # 获取最近的消息
+                        recent_messages = message_api.get_recent_messages(chat_id, hours=1.0, limit=15, filter_mai=True)
+                        logger.debug(f"{self.log_prefix} 从历史消息获取到 {len(recent_messages)} 条消息")
 
                         for msg in reversed(recent_messages):
-                            image_data = await self._extract_image_from_message(msg)
-                            if image_data:
-                                logger.info(f"{self.log_prefix} 从历史消息获取图片")
-                                return image_data
+                            # 检查消息是否包含图片标记
+                            is_picid = False
+                            if isinstance(msg, dict):
+                                is_picid = msg.get('is_picid', False)
+                            else:
+                                is_picid = getattr(msg, 'is_picid', False)
 
-                    # 尝试从消息存储获取
-                    message_storage = getattr(chat_stream, 'message_storage', None)
-                    if message_storage and hasattr(message_storage, 'get_recent_messages'):
-                        recent_messages = message_storage.get_recent_messages(10)
-                        logger.debug(f"{self.log_prefix} 从存储获取到 {len(recent_messages)} 条消息")
-
-                        for msg in reversed(recent_messages):
-                            image_data = await self._extract_image_from_message(msg)
-                            if image_data:
-                                logger.info(f"{self.log_prefix} 从存储消息获取图片")
-                                return image_data
+                            if is_picid:
+                                # 尝试从消息段中提取
+                                if hasattr(msg, 'message_segment') and msg.message_segment:
+                                    emoji_base64_list = self.find_and_return_emoji_in_message(msg.message_segment)
+                                    if emoji_base64_list:
+                                        logger.info(f"{self.log_prefix} 从历史消息中找到图片")
+                                        if attempt > 0:
+                                            logger.info(f"{self.log_prefix} 图片获取重试第 {attempt} 次成功")
+                                        return emoji_base64_list[0]
 
                 except Exception as e:
-                    logger.debug(f"{self.log_prefix} 从chat_stream获取历史消息失败: {e}")
+                    logger.debug(f"{self.log_prefix} 从历史消息获取图片失败: {e}")
 
-            # 最后尝试：使用插件系统的消息API
-            try:
-                from src.plugin_system.apis import message_api
-
-                chat_id = self._get_chat_id()
-                if chat_id:
-                    recent_messages = message_api.get_recent_messages(chat_id, hours=1.0, limit=20, filter_mai=True)
-                    logger.debug(f"{self.log_prefix} 从message_api获取到 {len(recent_messages)} 条消息")
-
-                    for msg in reversed(recent_messages):
-                        image_data = await self._extract_image_from_message(msg)
-                        if image_data:
-                            logger.info(f"{self.log_prefix} 从message_api获取图片")
-                            return image_data
-
+                # 如果还有重试次数且没找到图片，继续重试
+                if attempt < max_retries:
+                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次尝试未找到图片，将重试（剩余 {max_retries - attempt} 次）")
+                    continue
+                else:
+                    logger.error(f"{self.log_prefix} 重试 {max_retries} 次后仍未找到可用的图片消息")
+                    return None
             except Exception as e:
-                logger.debug(f"{self.log_prefix} 使用message_api获取消息失败: {e}")
+                if attempt < max_retries:
+                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次获取图片异常: {e}，将重试（剩余 {max_retries - attempt} 次）")
+                    continue
+                else:
+                    logger.error(f"{self.log_prefix} 重试后获取图片仍失败: {e!r}", exc_info=True)
+                    return None
 
-            return None
+        return None
 
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 从历史消息获取图片失败: {e!r}")
-            return None
+    def _get_action_message(self) -> Optional[Any]:
+        """获取action_message对象，兼容Action和Command"""
+        if hasattr(self.action, 'has_action_message') and self.action.has_action_message:
+            # Action组件
+            return self.action.action_message
+        elif hasattr(self.action, 'message') and hasattr(self.action.message, 'message_recv'):
+            # Command组件，使用message.message_recv作为action_message
+            return self.action.message.message_recv
+        return None
 
-    def _get_chat_stream(self):
-        """获取chat_stream对象"""
-        if self._is_action_component():
+    def _get_chat_stream(self) -> Optional[Any]:
+        """获取chat_stream对象，兼容Action和Command"""
+        if hasattr(self.action, 'chat_stream') and self.action.chat_stream:
+            # Action组件
             return self.action.chat_stream
-        elif self._is_command_component():
+        elif hasattr(self.action, 'message') and hasattr(self.action.message, 'chat_stream'):
+            # Command组件
             return self.action.message.chat_stream
         return None
 
     def _get_chat_id(self) -> Optional[str]:
-        """获取chat_id"""
-        if self._is_action_component():
+        """获取chat_id，兼容Action和Command"""
+        if hasattr(self.action, 'chat_id'):
+            # Action组件
             return self.action.chat_id
-        elif self._is_command_component():
-            chat_stream = self.action.message.chat_stream
-            return chat_stream.stream_id if chat_stream else None
-        return None
 
-    async def _extract_image_from_segments(self, message_segments) -> Optional[str]:
-        """从message_segment中提取图片数据"""
-        try:
-            if not message_segments:
-                return None
-
-            logger.debug(f"{self.log_prefix} 处理message_segment: {type(message_segments)}")
-
-            # 导入Seg类型
-            try:
-                from maim_message import Seg
-            except ImportError:
-                logger.debug(f"{self.log_prefix} 无法导入Seg类，使用通用处理")
-                Seg = None
-
-            # 处理单个Seg对象的情况
-            if Seg and isinstance(message_segments, Seg):
-                if message_segments.type == "emoji":
-                    return message_segments.data
-                elif message_segments.type == "image":
-                    return self._process_image_data(message_segments.data)
-                elif message_segments.type == "seglist":
-                    return await self._extract_image_from_segments(message_segments.data)
-
-            # 处理Seg列表的情况
-            elif hasattr(message_segments, '__iter__'):
-                try:
-                    for seg in message_segments:
-                        if Seg and isinstance(seg, Seg):
-                            if seg.type == "emoji":
-                                return seg.data
-                            elif seg.type == "image":
-                                return self._process_image_data(seg.data)
-                            elif seg.type == "seglist":
-                                nested_result = await self._extract_image_from_segments(seg.data)
-                                if nested_result:
-                                    return nested_result
-                        else:
-                            # 处理非Seg对象的情况
-                            seg_type = getattr(seg, 'type', None)
-                            if seg_type in ["emoji", "image"]:
-                                seg_data = getattr(seg, 'data', None)
-                                if seg_data:
-                                    processed_data = self._process_image_data(seg_data)
-                                    if processed_data:
-                                        return processed_data
-                except TypeError:
-                    # 如果不可迭代，尝试直接处理
-                    seg_type = getattr(message_segments, 'type', None)
-                    seg_data = getattr(message_segments, 'data', None)
-                    if seg_type in ["emoji", "image"] and seg_data:
-                        return self._process_image_data(seg_data)
-
-            # 处理字典格式的message_segment
-            if isinstance(message_segments, dict):
-                if message_segments.get('type') in ['image', 'emoji'] and 'data' in message_segments:
-                    return self._process_image_data(message_segments['data'])
-                if 'segments' in message_segments:
-                    return await self._extract_image_from_segments(message_segments['segments'])
-
-            # 处理列表格式
-            if isinstance(message_segments, list):
-                for item in message_segments:
-                    result = await self._extract_image_from_segments(item)
-                    if result:
-                        return result
-
-            logger.debug(f"{self.log_prefix} message_segment中未找到图片数据")
-            return None
-
-        except Exception as e:
-            logger.debug(f"{self.log_prefix} 从message_segment提取图片失败: {str(e)[:50]}")
-            return None
-
-    async def _extract_image_from_message(self, message) -> Optional[str]:
-        """从消息对象中提取图片数据"""
-        try:
-            if not message:
-                return None
-
-            # 检查消息是否包含图片标记
-            if isinstance(message, dict):
-                # 优先检查is_picid标记
-                if message.get('is_picid', False):
-                    potential_keys = [
-                        'message_segment', 'raw_message', 'display_message',
-                        'processed_plain_text', 'additional_config'
-                    ]
-
-                    for key in potential_keys:
-                        if key in message and message[key]:
-                            image_data = await self._extract_base64_from_text(str(message[key]))
-                            if image_data:
-                                logger.debug(f"{self.log_prefix} 从{key}字段提取到图片数据")
-                                return image_data
-
-                # 通用字段检查
-                for key in ['images', 'image', 'content', 'message_content', 'data']:
-                    if key in message and message[key]:
-                        data = message[key]
-                        if isinstance(data, list) and data:
-                            data = data[0]
-                        image_data = self._process_image_data(data)
-                        if image_data:
-                            return image_data
-
-            # 如果是消息对象（DatabaseMessages）
-            else:
-                # 检查是否有图片标记
-                if getattr(message, 'is_picid', False):
-                    # 尝试从消息段中获取图片
-                    message_segment = getattr(message, 'message_segment', None)
-                    if message_segment:
-                        image_data = self._extract_image_from_segment(message_segment)
-                        if image_data:
-                            return image_data
-
-                    # 从其他属性获取
-                    for attr in ['raw_message', 'processed_plain_text', 'display_message', 'additional_config']:
-                        text = getattr(message, attr, None)
-                        if text:
-                            image_data = await self._extract_base64_from_text(str(text))
-                            if image_data:
-                                logger.debug(f"{self.log_prefix} 从{attr}属性提取到图片数据")
-                                return image_data
-
-                # 尝试多种方式获取图片
-                image_sources = [
-                    getattr(message, 'images', None),
-                    getattr(message, 'image', None),
-                    getattr(message, 'content', None),
-                    getattr(message, 'message_content', None),
-                    getattr(message, 'data', None),
-                ]
-
-                for source in image_sources:
-                    if source:
-                        if isinstance(source, list) and source:
-                            image_data = self._process_image_data(source[0])
-                            if image_data:
-                                return image_data
-                        else:
-                            image_data = self._process_image_data(source)
-                            if image_data:
-                                return image_data
-
-            return None
-
-        except Exception as e:
-            logger.debug(f"{self.log_prefix} 从消息提取图片失败: {str(e)[:50]}")
-            return None
-
-    def _extract_image_from_segment(self, segment) -> Optional[str]:
-        """从消息段中提取图片"""
-        try:
-            if not segment:
-                return None
-
-            # 如果是字典格式的段
-            if isinstance(segment, dict):
-                if segment.get('type') == 'image' and 'data' in segment:
-                    return self._process_image_data(segment['data'])
-
-            # 如果有data属性
-            elif hasattr(segment, 'data'):
-                segment_data = getattr(segment, 'data')
-                if segment_data:
-                    return self._process_image_data(segment_data)
-
-            # 如果有type属性
-            elif hasattr(segment, 'type'):
-                segment_type = getattr(segment, 'type')
-                if segment_type == 'image' and hasattr(segment, 'data'):
-                    return self._process_image_data(getattr(segment, 'data'))
-
-            return None
-
-        except Exception as e:
-            logger.debug(f"{self.log_prefix} 从消息段提取图片失败: {str(e)[:50]}")
-            return None
-
-    async def _extract_base64_from_text(self, text: str) -> Optional[str]:
-        """从文本中提取base64图片数据"""
-        try:
-            if not text:
-                return None
-
-            # 检查是否直接是base64图片数据
-            if self._is_image_data(text):
-                return self._process_image_data(text)
-
-            # 增强的picid格式匹配，支持更多变体
-            picid_patterns = [
-                r'\[picid:([a-f0-9\-]+)\]',  # 标准格式
-                r'\[pic:([a-f0-9\-]+)\]',   # 简化格式
-                r'\[image:([a-f0-9\-]+)\]', # 其他变体
-                r'\[img:([a-f0-9\-]+)\]',   # 简称变体
-                r'picid:([a-f0-9\-]+)',      # 无括号版本
-                r'pic_id[:：]([a-f0-9\-]+)', # 下划线版本
-                r'image_id[:：]([a-f0-9\-]+)' # 其他变体
-            ]
-
-            for pattern in picid_patterns:
-                picid_match = re.search(pattern, text, re.IGNORECASE)
-                if picid_match:
-                    picid = picid_match.group(1)
-                    logger.info(f"{self.log_prefix} 找到picid: {picid[:8]}...")
-
-                    image_data = await self._get_image_by_picid(picid)
-                    if image_data:
-                        return image_data
-                    else:
-                        logger.warning(f"{self.log_prefix} picid {picid[:8]}... 无法获取图片数据")
-                        return None
-
-            # 尝试从可能的JSON格式中提取
-            try:
-                data = json.loads(text)
-                if isinstance(data, dict):
-                    for key in ['data', 'base64', 'image', 'content']:
-                        if key in data and data[key]:
-                            result = self._process_image_data(data[key])
-                            if result:
-                                return result
-                elif isinstance(data, list) and data:
-                    for item in data:
-                        result = await self._extract_base64_from_text(str(item))
-                        if result:
-                            return result
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-            return None
-
-        except Exception as e:
-            logger.debug(f"{self.log_prefix} 从文本提取base64失败: {str(e)[:50]}")
-            return None
-
-    async def _get_image_by_picid(self, picid: str) -> Optional[str]:
-        """通过picid获取图片的base64数据"""
-        try:
-            # 检查picid格式有效性
-            if not picid or len(picid) < 10:
-                logger.warning(f"{self.log_prefix} picid格式无效: {picid}")
-                return None
-
-            # 检查是否已经尝试过且失败的picid
-            if self._is_picid_failed(picid):
-                logger.debug(f"{self.log_prefix} picid {picid[:8]}... 已在失败缓存中，跳过")
-                return None
-
-            # 优先尝试从图片管理器获取最新图片
-            try:
-                from src.chat.utils.utils_image import get_image_manager
-                image_manager = get_image_manager()
-                if hasattr(image_manager, 'get_image_by_id'):
-                    image_data = await image_manager.get_image_by_id(picid)
-                    if image_data:
-                        logger.info(f"{self.log_prefix} 通过图片管理器获取picid {picid} 成功 (最新)")
-                        return image_data
-            except Exception as e:
-                logger.debug(f"{self.log_prefix} 图片管理器获取失败: {e}")
-
-            # 次优选择：从数据库获取当前有效路径
-            try:
-                from src.common.database.database_model import Images
-                image_record = Images.select().where(Images.id == picid).first()
-                if image_record and hasattr(image_record, 'path') and image_record.path:
-                    if os.path.exists(image_record.path):
-                        try:
-                            from src.chat.utils.utils_image import image_path_to_base64
-                            base64_data = image_path_to_base64(image_record.path)
-                            if base64_data:
-                                logger.info(f"{self.log_prefix} 通过picid从数据库获取图片成功: {image_record.path}")
-                                return base64_data
-                        except (FileNotFoundError, IOError) as e:
-                            logger.debug(f"{self.log_prefix} 读取图片文件失败: {e}")
-                    else:
-                        logger.debug(f"{self.log_prefix} 数据库路径文件不存在: {image_record.path}")
-                else:
-                    logger.debug(f"{self.log_prefix} 数据库中未找到picid {picid} 或路径为空")
-            except Exception as e:
-                logger.debug(f"{self.log_prefix} 从数据库获取图片失败: {e}")
-
-            # 最后尝试：文件系统路径搜索（可能是历史缓存）
-            try:
-                base64_data = await self._check_paths_concurrently(picid)
-                if base64_data:
-                    logger.warning(f"{self.log_prefix} 通过文件系统获取图片成功，但可能是历史缓存文件")
-                    return base64_data
-            except Exception as e:
-                logger.debug(f"{self.log_prefix} 并发文件系统查找失败: {e}")
-
-            logger.warning(f"{self.log_prefix} 无法通过picid {picid[:8]}... 获取图片数据")
-            self._mark_picid_failed(picid)
-            return None
-
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 通过picid获取图片异常: {str(e)[:100]}")
-            self._mark_picid_failed(picid)
-            return None
-
-    async def _check_paths_concurrently(self, picid: str) -> Optional[str]:
-        """并发检查多个可能的文件路径"""
-        possible_paths = [
-            f"data/images/{picid}.jpg",
-            f"data/images/{picid}.png",
-            f"data/images/{picid}.jpeg",
-            f"data/images/{picid}.webp",
-            f"images/{picid}.jpg",
-            f"images/{picid}.png",
-            f"images/{picid}.jpeg",
-            f"images/{picid}.webp",
-            f"temp/images/{picid}.jpg",
-            f"temp/images/{picid}.png"
-        ]
-
-        def check_single_path(path: str) -> Optional[str]:
-            """检查单个路径并返回base64数据"""
-            try:
-                if os.path.exists(path):
-                    from src.chat.utils.utils_image import image_path_to_base64
-                    base64_data = image_path_to_base64(path)
-                    if base64_data:
-                        logger.info(f"{self.log_prefix} 通过路径 {path} 获取图片成功")
-                        return base64_data
-            except (FileNotFoundError, IOError) as e:
-                logger.debug(f"{self.log_prefix} 读取路径 {path} 失败: {e}")
-            except Exception as e:
-                logger.debug(f"{self.log_prefix} 检查路径 {path} 异常: {e}")
-            return None
-
-        # 使用线程池并发检查所有路径
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            loop = asyncio.get_event_loop()
-            futures = [loop.run_in_executor(executor, check_single_path, path) for path in possible_paths]
-
-            # 等待第一个成功的结果
-            for future in asyncio.as_completed(futures):
-                try:
-                    result = await future
-                    if result:
-                        # 取消其他任务
-                        for f in futures:
-                            if not f.done():
-                                f.cancel()
-                        return result
-                except Exception as e:
-                    logger.debug(f"{self.log_prefix} 并发检查路径异常: {e}")
-                    continue
-
+        chat_stream = self._get_chat_stream()
+        if chat_stream and hasattr(chat_stream, 'stream_id'):
+            return chat_stream.stream_id
         return None
 
     def _process_image_data(self, data) -> Optional[str]:
@@ -591,22 +174,29 @@ class ImageProcessor:
             if not data:
                 return None
 
+            # 如果是字符串类型
             if isinstance(data, str):
+                # 检查是否是有效的base64图片数据
                 if self._is_image_data(data):
-                    if data.startswith('data:image'):
-                        base64_data = data.split(',', 1)[1] if ',' in data else data
-                        logger.debug(f"{self.log_prefix} 提取data URL中的base64数据，长度: {len(base64_data)}")
-                        return base64_data
-                    elif data.startswith(('iVBORw', '/9j/', 'UklGR', 'R0lGOD')):
-                        logger.debug(f"{self.log_prefix} 获取到base64图片数据，长度: {len(data)}")
-                        return data
+                    return data
+                # 如果不是，可能需要其他处理
+                return None
 
-            elif isinstance(data, dict):
-                for key in ['data', 'base64', 'content', 'url']:
+            # 如果是字典类型，尝试提取内部数据
+            if isinstance(data, dict):
+                for key in ['data', 'base64', 'content', 'image']:
                     if key in data and data[key]:
                         result = self._process_image_data(data[key])
                         if result:
                             return result
+
+            # 如果是字节类型，转换为base64
+            if isinstance(data, bytes):
+                try:
+                    return base64.b64encode(data).decode('utf-8')
+                except Exception as e:
+                    logger.debug(f"{self.log_prefix} 字节数据转base64失败: {e}")
+                    return None
 
             return None
 
@@ -615,10 +205,33 @@ class ImageProcessor:
             return None
 
     def _is_image_data(self, data: str) -> bool:
-        """检查字符串是否包含图片数据"""
-        if not isinstance(data, str):
+        """检查字符串是否是有效的base64图片数据"""
+        try:
+            if not isinstance(data, str) or len(data) < 100:
+                return False
+
+            # 检查是否包含base64图片前缀
+            if any(prefix in data[:50] for prefix in ['data:image/', '/9j/', 'iVBOR', 'UklGR', 'R0lGO']):
+                return True
+
+            # 检查base64格式特征
+            if len(data) % 4 == 0 and all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in data[:100]):
+                # 尝试解码前几个字符看是否是图片格式
+                try:
+                    decoded_start = base64.b64decode(data[:100])
+                    for format_name, patterns in self._image_format_patterns.items():
+                        for pattern in patterns:
+                            if isinstance(pattern, str) and decoded_start.startswith(pattern.encode()):
+                                return True
+                            elif isinstance(pattern, bytes) and decoded_start.startswith(pattern):
+                                return True
+                except Exception:
+                    pass
+
             return False
-        return data.startswith(('data:image', 'iVBORw', '/9j/', 'UklGR', 'R0lGOD'))
+
+        except Exception:
+            return False
 
     def validate_image_size(self, image_size: str) -> bool:
         """验证图片尺寸格式"""
@@ -915,4 +528,84 @@ class ImageProcessor:
 
         except Exception as e:
             logger.debug(f"{self.log_prefix} 查询消息ID {message_id} 失败: {e}")
+            return None
+
+    def find_and_return_emoji_in_message(self, message_segments) -> List[str]:
+        """从消息中查找并返回表情包/图片的base64数据列表 (来自emoji_manage插件)"""
+        emoji_base64_list = []
+
+        # 处理单个Seg对象的情况
+        if isinstance(message_segments, Seg):
+            if message_segments.type == "emoji":
+                emoji_base64_list.append(message_segments.data)
+            elif message_segments.type == "image":
+                # 假设图片数据是base64编码的
+                emoji_base64_list.append(message_segments.data)
+            elif message_segments.type == "seglist":
+                # 递归处理嵌套的Seg列表
+                emoji_base64_list.extend(self.find_and_return_emoji_in_message(message_segments.data))
+            return emoji_base64_list
+
+        # 处理Seg列表的情况
+        for seg in message_segments:
+            if seg.type == "emoji":
+                emoji_base64_list.append(seg.data)
+            elif seg.type == "image":
+                # 假设图片数据是base64编码的
+                emoji_base64_list.append(seg.data)
+            elif seg.type == "seglist":
+                # 递归处理嵌套的Seg列表
+                emoji_base64_list.extend(self.find_and_return_emoji_in_message(seg.data))
+        return emoji_base64_list
+
+    async def _extract_image_from_message(self, message) -> Optional[str]:
+        """从消息中提取图片数据"""
+        try:
+            if not message:
+                return None
+
+            # 如果消息有message_segment，直接从中提取
+            message_segment = None
+            if isinstance(message, dict):
+                message_segment = message.get('message_segment')
+            else:
+                message_segment = getattr(message, 'message_segment', None)
+
+            if message_segment:
+                emoji_base64_list = self.find_and_return_emoji_in_message(message_segment)
+                if emoji_base64_list:
+                    return emoji_base64_list[0]
+
+            return None
+
+        except Exception as e:
+            logger.debug(f"{self.log_prefix} 从消息提取图片失败: {e}")
+            return None
+
+    async def _extract_base64_from_text(self, text: str) -> Optional[str]:
+        """从文本中提取base64图片数据"""
+        try:
+            if not text:
+                return None
+
+            # 尝试匹配base64数据模式
+            import re
+
+            # 匹配data:image/格式的base64
+            data_url_pattern = r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)'
+            match = re.search(data_url_pattern, text)
+            if match:
+                return match.group(1)
+
+            # 匹配纯base64数据（长度较长的情况）
+            base64_pattern = r'([A-Za-z0-9+/]{100,}={0,2})'
+            matches = re.findall(base64_pattern, text)
+            for match in matches:
+                if self._is_image_data(match):
+                    return match
+
+            return None
+
+        except Exception as e:
+            logger.debug(f"{self.log_prefix} 从文本提取base64失败: {e}")
             return None

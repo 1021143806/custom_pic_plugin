@@ -71,7 +71,8 @@ class PicGenerationCommand(BaseCommand):
 
         # 获取最近的图片作为输入图片
         image_processor = ImageProcessor(self)
-        input_image_base64 = await image_processor.get_recent_image()
+        image_retry_count = self.get_config("components.image_retry_count", 3)
+        input_image_base64 = await image_processor.get_recent_image(max_retries=image_retry_count)
 
         if not input_image_base64:
             await self.send_text("未找到要处理的图片，请先发送一张图片")
@@ -87,14 +88,18 @@ class PicGenerationCommand(BaseCommand):
             await self.send_text(f"正在使用 {model_id} 模型进行 {style_name} 风格转换...")
 
         try:
-            # 调用API客户端生成图片
+            # 获取重试次数配置
+            max_retries = self.get_config("components.max_retries", 2)
+
+            # 调用API客户端生成图片（API客户端内部会处理重试）
             api_client = ApiClient(self)
             success, result = await api_client.generate_image(
                 prompt=final_description,
                 model_config=model_config,
                 size=model_config.get("default_size", "1024x1024"),
                 strength=0.7,  # 默认强度
-                input_image_base64=input_image_base64
+                input_image_base64=input_image_base64,
+                max_retries=max_retries
             )
 
             if success:

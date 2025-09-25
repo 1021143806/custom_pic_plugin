@@ -18,41 +18,74 @@ class ApiClient:
         self.log_prefix = action_instance.log_prefix
 
     async def generate_image(self, prompt: str, model_config: Dict[str, Any], size: str,
-                           strength: float = None, input_image_base64: str = None) -> Tuple[bool, str]:
-        """根据API格式调用不同的请求方法"""
+                           strength: float = None, input_image_base64: str = None, max_retries: int = 3) -> Tuple[bool, str]:
+        """根据API格式调用不同的请求方法，支持重试机制"""
         api_format = model_config.get("format", "openai")
 
-        if api_format == "doubao":
-            return await asyncio.to_thread(
-                self._make_doubao_request,
-                prompt=prompt,
-                model_config=model_config,
-                size=size,
-                input_image_base64=input_image_base64
-            )
-        elif api_format == "modelscope":
-            return await asyncio.to_thread(
-                self._make_modelscope_request,
-                prompt=prompt,
-                model_config=model_config,
-                input_image_base64=input_image_base64
-            )
-        elif api_format == "gemini":
-            return await asyncio.to_thread(
-                self._make_gemini_request,
-                prompt=prompt,
-                model_config=model_config,
-                input_image_base64=input_image_base64
-            )
-        else:  # 默认为openai格式
-            return await asyncio.to_thread(
-                self._make_openai_image_request,
-                prompt=prompt,
-                model_config=model_config,
-                size=size,
-                strength=strength,
-                input_image_base64=input_image_base64
-            )
+        # 实现重试逻辑
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    logger.info(f"{self.log_prefix} API调用重试第 {attempt} 次")
+                    await asyncio.sleep(1.0 * attempt)  # 渐进式等待时间
+
+                logger.debug(f"{self.log_prefix} 开始API调用（尝试 {attempt + 1}/{max_retries + 1}）")
+
+                if api_format == "doubao":
+                    success, result = await asyncio.to_thread(
+                        self._make_doubao_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        size=size,
+                        input_image_base64=input_image_base64
+                    )
+                elif api_format == "modelscope":
+                    success, result = await asyncio.to_thread(
+                        self._make_modelscope_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        input_image_base64=input_image_base64
+                    )
+                elif api_format == "gemini":
+                    success, result = await asyncio.to_thread(
+                        self._make_gemini_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        input_image_base64=input_image_base64
+                    )
+                else:  # 默认为openai格式
+                    success, result = await asyncio.to_thread(
+                        self._make_openai_image_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        size=size,
+                        strength=strength,
+                        input_image_base64=input_image_base64
+                    )
+
+                # 如果成功，直接返回
+                if success:
+                    if attempt > 0:
+                        logger.info(f"{self.log_prefix} API调用重试第 {attempt} 次成功")
+                    return True, result
+
+                # 如果失败但还有重试次数
+                if attempt < max_retries:
+                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次API调用失败: {result}，将重试（剩余 {max_retries - attempt} 次）")
+                    continue
+                else:
+                    logger.error(f"{self.log_prefix} 重试 {max_retries} 次后API调用仍失败: {result}")
+                    return False, result
+
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次API调用异常: {e}，将重试（剩余 {max_retries - attempt} 次）")
+                    continue
+                else:
+                    logger.error(f"{self.log_prefix} 重试后API调用仍异常: {e!r}", exc_info=True)
+                    return False, f"API调用异常: {str(e)[:100]}"
+
+        return False, "API调用失败"
 
     def _make_doubao_request(self, prompt: str, model_config: Dict[str, Any], size: str, input_image_base64: str = None) -> Tuple[bool, str]:
         """发送豆包格式的HTTP请求生成图片"""
