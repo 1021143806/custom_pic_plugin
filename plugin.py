@@ -56,7 +56,12 @@ class CustomPicPlugin(BasePlugin):
             "enable_pic_config": ConfigField(type=bool, default=True, description="是否启用模型配置管理命令，支持/pic list、/pic set等"),
             "enable_pic_style": ConfigField(type=bool, default=True, description="是否启用风格管理命令，支持/pic styles、/pic style等"),
             "pic_command_model": ConfigField(type=str, default="model1", description="Command组件使用的模型ID，可通过/pic set命令动态切换"),
-            "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示，关闭后仅显示图片结果和错误信息")
+            "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示，关闭后仅显示图片结果和错误信息"),
+            "admin_users": ConfigField(
+                type=list,
+                default=[],
+                description="有权限使用配置管理命令的管理员用户列表，请填写字符串形式的用户ID"
+            )
         },
         "logging": {
             "level": ConfigField(type=str, default="INFO", description="日志记录级别，DEBUG显示详细信息", choices=["DEBUG", "INFO", "WARNING", "ERROR"]),

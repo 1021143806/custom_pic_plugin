@@ -231,6 +231,12 @@ class PicConfigCommand(BaseCommand):
         params = self.matched_groups.get("params", "") or ""
         params = params.strip()
 
+        # 对于需要管理员权限的操作进行权限检查
+        if action in ["set", "reset"]:
+            if not self._check_permission():
+                await self.send_text("你无权使用此命令，该命令仅限管理员使用", storage_message=False)
+                return False, "没有权限", True
+
         if action == "list" or action == "models":
             return await self._list_models()
         elif action == "set":
@@ -245,8 +251,8 @@ class PicConfigCommand(BaseCommand):
                 "/pic list - 列出所有可用模型\n"
                 "/pic models - 列出所有可用模型\n"
                 "/pic config - 显示当前配置\n"
-                "/pic set <模型ID> - 设置图生图命令模型\n"
-                "/pic reset - 重置为默认配置"
+                "/pic set <模型ID> - 设置图生图命令模型（仅管理员）\n"
+                "/pic reset - 重置为默认配置（仅管理员）"
             )
             return False, "无效的操作参数", True
 
@@ -403,6 +409,9 @@ class PicConfigCommand(BaseCommand):
             default_config = self.get_config(f"models.{default_model}", {})
             command_config = self.get_config(f"models.{command_model}", {})
 
+            # 检查用户权限，决定显示内容
+            has_permission = self._check_permission()
+
             # 构建配置信息
             message_lines = [
                 "⚙️ 当前图片生成配置：\n",
@@ -419,13 +428,23 @@ class PicConfigCommand(BaseCommand):
                     f"   ⚡ 当前使用运行时覆盖配置"
                 ])
 
-            message_lines.extend([
-                "\n📖 使用提示：",
-                "• /pic list - 查看所有模型",
-                "• /pic set <模型ID> - 设置图生图模型",
-                "• /pic reset - 重置为默认配置",
-                "• /pic <风格> - 使用风格进行图生图"
-            ])
+            if has_permission:
+                # 管理员看到完整信息和操作提示
+                message_lines.extend([
+                    "\n📖 管理员命令：",
+                    "• /pic list - 查看所有模型",
+                    "• /pic set <模型ID> - 设置图生图模型",
+                    "• /pic reset - 重置为默认配置",
+                    "• /pic <风格> - 使用风格进行图生图"
+                ])
+            else:
+                # 普通用户只能看到基本功能提示
+                message_lines.extend([
+                    "\n📖 使用提示：",
+                    "• /pic list - 查看所有模型",
+                    "• /pic <风格> - 使用风格进行图生图",
+                    "• /pic styles - 查看可用风格"
+                ])
 
             message = "\n".join(message_lines)
             await self.send_text(message)
@@ -435,6 +454,17 @@ class PicConfigCommand(BaseCommand):
             logger.error(f"{self.log_prefix} 显示配置失败: {e!r}")
             await self.send_text(f"获取配置信息失败：{str(e)[:100]}")
             return False, f"显示配置失败: {str(e)}", True
+
+    def _check_permission(self) -> bool:
+        """检查用户权限"""
+        if (
+            not self.message
+            or not self.message.message_info
+            or not self.message.message_info.user_info
+            or str(self.message.message_info.user_info.user_id) not in self.get_config("components.admin_users", [])
+        ):
+            return False
+        return True
 
 
 class PicStyleCommand(BaseCommand):
