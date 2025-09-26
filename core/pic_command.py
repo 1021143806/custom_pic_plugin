@@ -200,7 +200,22 @@ class PicGenerationCommand(BaseCommand):
             import requests
             import base64
 
-            response = requests.get(image_url, timeout=30)
+            # 获取代理配置
+            proxy_enabled = self.get_config("proxy.enabled", False)
+            request_kwargs = {
+                "url": image_url,
+                "timeout": 30
+            }
+
+            if proxy_enabled:
+                proxy_url = self.get_config("proxy.url", "http://127.0.0.1:7890")
+                request_kwargs["proxies"] = {
+                    "http": proxy_url,
+                    "https": proxy_url
+                }
+                logger.info(f"{self.log_prefix} 下载图片使用代理: {proxy_url}")
+
+            response = requests.get(**request_kwargs)
             if response.status_code == 200:
                 image_base64 = base64.b64encode(response.content).decode('utf-8')
                 return True, image_base64

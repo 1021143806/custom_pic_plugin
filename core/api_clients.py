@@ -17,6 +17,28 @@ class ApiClient:
         self.action = action_instance
         self.log_prefix = action_instance.log_prefix
 
+    def _get_proxy_config(self):
+        """获取代理配置"""
+        try:
+            proxy_enabled = self.action.get_config("proxy.enabled", False)
+            if not proxy_enabled:
+                return None
+
+            proxy_url = self.action.get_config("proxy.url", "http://127.0.0.1:7890")
+            timeout = self.action.get_config("proxy.timeout", 60)
+
+            proxy_config = {
+                "http": proxy_url,
+                "https": proxy_url,
+                "timeout": timeout
+            }
+
+            logger.info(f"{self.log_prefix} 代理已启用: {proxy_url}")
+            return proxy_config
+        except Exception as e:
+            logger.warning(f"{self.log_prefix} 获取代理配置失败: {e}, 将不使用代理")
+            return None
+
     async def generate_image(self, prompt: str, model_config: Dict[str, Any], size: str,
                            strength: float = None, input_image_base64: str = None, max_retries: int = 2) -> Tuple[bool, str]:
         """根据API格式调用不同的请求方法，支持重试"""
@@ -97,12 +119,27 @@ class ApiClient:
                 logger.error(f"{self.log_prefix} (Doubao) 缺少volcenginesdkarkruntime库，请安装: pip install 'volcengine-python-sdk[ark]'")
                 return False, "缺少豆包SDK，请安装volcengine-python-sdk[ark]"
 
+            # 获取代理配置
+            proxy_config = self._get_proxy_config()
+
             # 初始化客户端
             api_key = model_config.get("api_key", "").replace("Bearer ", "")
-            client = Ark(
-                base_url=model_config.get("base_url"),
-                api_key=api_key,
-            )
+            client_kwargs = {
+                "base_url": model_config.get("base_url"),
+                "api_key": api_key,
+            }
+
+            # 如果启用了代理，配置代理
+            if proxy_config:
+                # 豆包SDK使用httpx，需要传递proxies参数
+                proxy_url = proxy_config["http"]  # 使用统一的代理地址
+                client_kwargs["proxies"] = {
+                    "http://": proxy_url,
+                    "https://": proxy_url
+                }
+                client_kwargs["timeout"] = proxy_config["timeout"]
+
+            client = Ark(**client_kwargs)
 
             # 获取模型特定的配置参数
             custom_prompt_add = model_config.get("custom_prompt_add", "")
@@ -213,10 +250,26 @@ class ApiClient:
         logger.info(f"{self.log_prefix} (OpenAI) 发起图片请求: {model}, Prompt: {prompt_add[:30]}... To: {endpoint}")
         logger.debug(f"{self.log_prefix} (OpenAI) Request Headers: {{...Authorization: {generate_api_key[:10]}...}}")
         logger.debug(f"{self.log_prefix} (OpenAI) Request Body (api-key omitted): {json.dumps({k: v for k, v in payload_dict.items() if k != 'api-key'})}")
+
+        # 获取代理配置
+        proxy_config = self._get_proxy_config()
+
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
 
         try:
-            with urllib.request.urlopen(req, timeout=600) as response:
+            # 如果启用了代理，设置代理处理器
+            if proxy_config:
+                proxy_handler = urllib.request.ProxyHandler({
+                    'http': proxy_config['http'],
+                    'https': proxy_config['https']
+                })
+                opener = urllib.request.build_opener(proxy_handler)
+                urllib.request.install_opener(opener)
+                timeout = proxy_config.get('timeout', 600)
+            else:
+                timeout = 600
+
+            with urllib.request.urlopen(req, timeout=timeout) as response:
                 response_status = response.status
                 response_body_bytes = response.read()
                 response_body_str = response_body_bytes.decode("utf-8")
@@ -288,24 +341,19 @@ class ApiClient:
 
             logger.info(f"{self.log_prefix} (魔搭) 使用模型: {model_name}, API地址: {base_url}")
 
-            # 添加额外的提示词前缀（魔搭可能需要）
+            # 添加额外的提示词前缀
             custom_prompt_add = model_config.get("custom_prompt_add", "")
             full_prompt = prompt + custom_prompt_add
 
             # 获取其他配置参数
-            guidance_scale = model_config.get("guidance_scale", 2.5)
-            num_inference_steps = model_config.get("num_inference_steps", 20)
+            guidance = model_config.get("guidance_scale", 3.5)
+            steps = model_config.get("num_inference_steps", 30)
+            negative_prompt = model_config.get("negative_prompt_add", "")
+            seed = model_config.get("seed", 42)
 
-            # 构建请求数据
-            request_data = {
-                "model": model_name,
-                "prompt": full_prompt,
-                "guidance_scale": guidance_scale,
-                "num_inference_steps": num_inference_steps
-            }
-
-            # 如果有输入图片，需要特殊处理
+            # 根据是否有输入图片，构建不同的请求参数
             if input_image_base64:
+                # 处理图片格式
                 if not input_image_base64.startswith('data:image'):
                     # 检测图片格式
                     if input_image_base64.startswith('/9j/'):
@@ -317,23 +365,56 @@ class ApiClient:
                 else:
                     image_data_uri = input_image_base64
 
-                request_data["image"] = image_data_uri
+                # 图生图请求数据
+                request_data = {
+                    "model": model_name,
+                    "prompt": full_prompt,
+                    "image_url": image_data_uri
+                }
                 logger.info(f"{self.log_prefix} (魔搭) 使用图生图模式，图片格式: {image_data_uri[:50]}...")
             else:
+                # 文生图模式：可以使用完整参数
+                request_data = {
+                    "model": model_name,
+                    "prompt": full_prompt
+                }
+
+                # 添加文生图的可选参数
+                if negative_prompt:
+                    request_data["negative_prompt"] = negative_prompt
+                if size:
+                    request_data["size"] = size
+                request_data["seed"] = seed
+                request_data["steps"] = steps
+                request_data["guidance"] = guidance
+
                 logger.info(f"{self.log_prefix} (魔搭) 使用文生图模式")
 
             logger.info(f"{self.log_prefix} (魔搭) 发起异步图片生成请求，模型: {model_name}")
 
+            # 获取代理配置
+            proxy_config = self._get_proxy_config()
+
             # 直接拼接路径，base_url应该包含完整的API版本路径
             endpoint = f"{base_url.rstrip('/')}/images/generations"
 
+            # 构建requests的参数
+            request_kwargs = {
+                "url": endpoint,
+                "headers": headers,
+                "data": json.dumps(request_data, ensure_ascii=False).encode('utf-8'),
+                "timeout": proxy_config.get('timeout', 30) if proxy_config else 30
+            }
+
+            # 如果启用了代理，添加代理配置
+            if proxy_config:
+                request_kwargs["proxies"] = {
+                    "http": proxy_config["http"],
+                    "https": proxy_config["https"]
+                }
+
             # 发送异步请求
-            response = requests.post(
-                endpoint,
-                headers=headers,
-                data=json.dumps(request_data, ensure_ascii=False).encode('utf-8'),
-                timeout=30
-            )
+            response = requests.post(**request_kwargs)
         
             if response.status_code != 200:
                 error_msg = response.text
@@ -359,11 +440,22 @@ class ApiClient:
             max_attempts = 24  # 最多检查2分钟
             for attempt in range(max_attempts):
                 try:
-                    check_response = requests.get(
-                        f"{base_url}/v1/tasks/{task_id}",
-                        headers=check_headers,
-                        timeout=10
-                    )
+                    # 构建状态检查请求参数
+                    status_url = f"{base_url}/tasks/{task_id}"
+                    check_kwargs = {
+                        "url": status_url,
+                        "headers": check_headers,
+                        "timeout": 10
+                    }
+
+                    # 如果启用了代理，添加代理配置
+                    if proxy_config:
+                        check_kwargs["proxies"] = {
+                            "http": proxy_config["http"],
+                            "https": proxy_config["https"]
+                        }
+
+                    check_response = requests.get(**check_kwargs)
                 
                     if check_response.status_code != 200:
                         logger.warning(f"{self.log_prefix} (魔搭) 状态检查失败: HTTP {check_response.status_code}")
@@ -378,7 +470,20 @@ class ApiClient:
                         
                             # 下载图片并转换为base64
                             try:
-                                img_response = requests.get(image_url, timeout=30)
+                                # 构建图片下载请求参数
+                                img_kwargs = {
+                                    "url": image_url,
+                                    "timeout": 30
+                                }
+
+                                # 如果启用了代理，添加代理配置
+                                if proxy_config:
+                                    img_kwargs["proxies"] = {
+                                        "http": proxy_config["http"],
+                                        "https": proxy_config["https"]
+                                    }
+
+                                img_response = requests.get(**img_kwargs)
                                 if img_response.status_code == 200:
                                     import base64
                                     image_base64 = base64.b64encode(img_response.content).decode('utf-8')
@@ -487,13 +592,26 @@ class ApiClient:
         
             logger.info(f"{self.log_prefix} (Gemini) 发起图片请求: {model_name}")
 
+            # 获取代理配置
+            proxy_config = self._get_proxy_config()
+
+            # 构建请求参数
+            request_kwargs = {
+                "url": url,
+                "headers": headers,
+                "json": request_data,
+                "timeout": proxy_config.get('timeout', 120) if proxy_config else 120
+            }
+
+            # 如果启用了代理，添加代理配置
+            if proxy_config:
+                request_kwargs["proxies"] = {
+                    "http": proxy_config["http"],
+                    "https": proxy_config["https"]
+                }
+
             # 发送请求
-            response = requests.post(
-                url=url,
-                headers=headers,
-                json=request_data,
-                timeout=120
-            )
+            response = requests.post(**request_kwargs)
 
             # 检查响应状态
             if response.status_code != 200:

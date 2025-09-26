@@ -68,6 +68,11 @@ class CustomPicPlugin(BasePlugin):
             "level": ConfigField(type=str, default="INFO", description="日志记录级别，DEBUG显示详细信息", choices=["DEBUG", "INFO", "WARNING", "ERROR"]),
             "prefix": ConfigField(type=str, default="[unified_pic_Plugin]", description="日志前缀标识")
         },
+        "proxy": {
+            "enabled": ConfigField(type=bool, default=False, description="是否启用代理。开启后所有API请求将通过代理服务器"),
+            "url": ConfigField(type=str, default="http://127.0.0.1:7890", description="代理服务器地址，格式：http://host:port。支持HTTP/HTTPS/SOCKS5代理"),
+            "timeout": ConfigField(type=int, default=60, description="代理连接超时时间（秒），建议30-120秒")
+        },
         "styles": {
             "cartoon": ConfigField(
                 type=str,
