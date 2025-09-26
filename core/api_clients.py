@@ -18,8 +18,8 @@ class ApiClient:
         self.log_prefix = action_instance.log_prefix
 
     async def generate_image(self, prompt: str, model_config: Dict[str, Any], size: str,
-                           strength: float = None, input_image_base64: str = None, max_retries: int = 3) -> Tuple[bool, str]:
-        """根据API格式调用不同的请求方法，支持重试机制"""
+                           strength: float = None, input_image_base64: str = None, max_retries: int = 2) -> Tuple[bool, str]:
+        """根据API格式调用不同的请求方法，支持重试"""
         api_format = model_config.get("format", "openai")
 
         # 实现重试逻辑

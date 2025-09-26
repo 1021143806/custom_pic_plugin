@@ -58,84 +58,65 @@ class ImageProcessor:
         """判断是否为Command组件"""
         return hasattr(self.action, 'message')
 
-    async def get_recent_image(self, max_retries: int = 3) -> Optional[str]:
-        """获取最近的图片消息，支持多种组件类型和重试机制"""
-        for attempt in range(max_retries + 1):
+    async def get_recent_image(self) -> Optional[str]:
+        """获取最近的图片消息，支持多种组件类型"""
+        try:
+            logger.debug(f"{self.log_prefix} 开始获取图片消息")
+
+            # 方法1：从当前消息的message_segment中检索（最优先）
+            message_segments = None
+
+            # 兼容Action和Command组件
+            if hasattr(self.action, 'message') and hasattr(self.action.message, 'message_segment'):
+                # Command组件
+                message_segments = self.action.message.message_segment
+            elif hasattr(self.action, 'action_message') and hasattr(self.action.action_message, 'message_segment'):
+                # Action组件
+                message_segments = self.action.action_message.message_segment
+
+            if message_segments:
+                # 使用emoji插件的检索功能
+                emoji_base64_list = self.find_and_return_emoji_in_message(message_segments)
+                if emoji_base64_list:
+                    logger.info(f"{self.log_prefix} 在当前消息中找到 {len(emoji_base64_list)} 张图片")
+                    return emoji_base64_list[0]  # 返回第一张图片
+
+            # 方法2：从历史消息中查找（作为后备）
             try:
-                if attempt > 0:
-                    logger.info(f"{self.log_prefix} 图片获取重试第 {attempt} 次")
-                    await asyncio.sleep(0.2 * attempt)  # 渐进式等待时间
+                from src.plugin_system.apis import message_api
 
-                logger.debug(f"{self.log_prefix} 开始获取图片消息（尝试 {attempt + 1}/{max_retries + 1}）")
+                # 获取chat_id
+                chat_id = self._get_chat_id()
+                if chat_id:
+                    # 获取最近的消息
+                    recent_messages = message_api.get_recent_messages(chat_id, hours=1.0, limit=15, filter_mai=True)
+                    logger.debug(f"{self.log_prefix} 从历史消息获取到 {len(recent_messages)} 条消息")
 
-                # 方法1：从当前消息的message_segment中检索（最优先）
-                message_segments = None
+                    for msg in reversed(recent_messages):
+                        # 检查消息是否包含图片标记
+                        is_picid = False
+                        if isinstance(msg, dict):
+                            is_picid = msg.get('is_picid', False)
+                        else:
+                            is_picid = getattr(msg, 'is_picid', False)
 
-                # 兼容Action和Command组件
-                if hasattr(self.action, 'message') and hasattr(self.action.message, 'message_segment'):
-                    # Command组件
-                    message_segments = self.action.message.message_segment
-                elif hasattr(self.action, 'action_message') and hasattr(self.action.action_message, 'message_segment'):
-                    # Action组件
-                    message_segments = self.action.action_message.message_segment
+                        if is_picid:
+                            # 尝试从消息段中提取
+                            if hasattr(msg, 'message_segment') and msg.message_segment:
+                                emoji_base64_list = self.find_and_return_emoji_in_message(msg.message_segment)
+                                if emoji_base64_list:
+                                    logger.info(f"{self.log_prefix} 从历史消息中找到图片")
+                                    return emoji_base64_list[0]
 
-                if message_segments:
-                    # 使用emoji插件的检索功能
-                    emoji_base64_list = self.find_and_return_emoji_in_message(message_segments)
-                    if emoji_base64_list:
-                        logger.info(f"{self.log_prefix} 在当前消息中找到 {len(emoji_base64_list)} 张图片")
-                        if attempt > 0:
-                            logger.info(f"{self.log_prefix} 图片获取重试第 {attempt} 次成功")
-                        return emoji_base64_list[0]  # 返回第一张图片
-
-                # 方法2：从历史消息中查找（作为后备）
-                try:
-                    from src.plugin_system.apis import message_api
-
-                    # 获取chat_id
-                    chat_id = self._get_chat_id()
-                    if chat_id:
-                        # 获取最近的消息
-                        recent_messages = message_api.get_recent_messages(chat_id, hours=1.0, limit=15, filter_mai=True)
-                        logger.debug(f"{self.log_prefix} 从历史消息获取到 {len(recent_messages)} 条消息")
-
-                        for msg in reversed(recent_messages):
-                            # 检查消息是否包含图片标记
-                            is_picid = False
-                            if isinstance(msg, dict):
-                                is_picid = msg.get('is_picid', False)
-                            else:
-                                is_picid = getattr(msg, 'is_picid', False)
-
-                            if is_picid:
-                                # 尝试从消息段中提取
-                                if hasattr(msg, 'message_segment') and msg.message_segment:
-                                    emoji_base64_list = self.find_and_return_emoji_in_message(msg.message_segment)
-                                    if emoji_base64_list:
-                                        logger.info(f"{self.log_prefix} 从历史消息中找到图片")
-                                        if attempt > 0:
-                                            logger.info(f"{self.log_prefix} 图片获取重试第 {attempt} 次成功")
-                                        return emoji_base64_list[0]
-
-                except Exception as e:
-                    logger.debug(f"{self.log_prefix} 从历史消息获取图片失败: {e}")
-
-                # 如果还有重试次数且没找到图片，继续重试
-                if attempt < max_retries:
-                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次尝试未找到图片，将重试（剩余 {max_retries - attempt} 次）")
-                    continue
-                else:
-                    logger.error(f"{self.log_prefix} 重试 {max_retries} 次后仍未找到可用的图片消息")
-                    return None
             except Exception as e:
-                if attempt < max_retries:
-                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次获取图片异常: {e}，将重试（剩余 {max_retries - attempt} 次）")
-                    continue
-                else:
-                    logger.error(f"{self.log_prefix} 重试后获取图片仍失败: {e!r}", exc_info=True)
-                    return None
+                logger.debug(f"{self.log_prefix} 从历史消息获取图片失败: {e}")
 
-        return None
+            logger.warning(f"{self.log_prefix} 未找到可用的图片消息")
+            return None
+
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 获取图片失败: {e!r}", exc_info=True)
+            return None
 
     def _get_action_message(self) -> Optional[Any]:
         """获取action_message对象，兼容Action和Command"""

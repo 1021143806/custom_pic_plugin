@@ -62,8 +62,7 @@ class CustomPicPlugin(BasePlugin):
                 default=[],
                 description="有权限使用配置管理命令的管理员用户列表，请填写字符串形式的用户ID"
             ),
-            "max_retries": ConfigField(type=int, default=2, description="API调用失败时的重试次数，建议2-5次。设置为0表示不重试"),
-            "image_retry_count": ConfigField(type=int, default=3, description="图片获取失败时的重试次数，建议2-5次。设置为0表示不重试")
+            "max_retries": ConfigField(type=int, default=2, description="API调用失败时的重试次数，建议2-5次。设置为0表示不重试")
         },
         "logging": {
             "level": ConfigField(type=str, default="INFO", description="日志记录级别，DEBUG显示详细信息", choices=["DEBUG", "INFO", "WARNING", "ERROR"]),

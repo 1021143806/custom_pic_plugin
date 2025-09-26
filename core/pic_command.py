@@ -71,8 +71,7 @@ class PicGenerationCommand(BaseCommand):
 
         # 获取最近的图片作为输入图片
         image_processor = ImageProcessor(self)
-        image_retry_count = self.get_config("components.image_retry_count", 3)
-        input_image_base64 = await image_processor.get_recent_image(max_retries=image_retry_count)
+        input_image_base64 = await image_processor.get_recent_image()
 
         if not input_image_base64:
             await self.send_text("未找到要处理的图片，请先发送一张图片")
@@ -91,7 +90,7 @@ class PicGenerationCommand(BaseCommand):
             # 获取重试次数配置
             max_retries = self.get_config("components.max_retries", 2)
 
-            # 调用API客户端生成图片（API客户端内部会处理重试）
+            # 调用API客户端生成图片
             api_client = ApiClient(self)
             success, result = await api_client.generate_image(
                 prompt=final_description,
@@ -362,8 +361,7 @@ class PicConfigCommand(BaseCommand):
     async def _update_command_model_config(self, model_id: str) -> bool:
         """动态更新命令模型配置"""
         try:
-            # 使用类级别的配置覆盖机制
-            # 这会影响所有PicGenerationCommand实例
+            # 使用类级别的配置覆盖机制（这会影响所有PicGenerationCommand实例）
             PicGenerationCommand._config_overrides["components.pic_command_model"] = model_id
 
             logger.info(f"{self.log_prefix} 已设置配置覆盖: components.pic_command_model = {model_id}")
