@@ -8,6 +8,7 @@
 
 ![alt text](./md_pic/30176E6B83A79E3FB342E740564B8159.jpg)
 ![alt text](./md_pic/20250926-145915.png)
+![alt text](./md_pic/20250926-152616.png)
 
 ## ✨ 主要特性（本插件为 MaiBot 生态下的图片生成扩展）
 
