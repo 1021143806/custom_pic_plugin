@@ -223,23 +223,41 @@ class ImageProcessor:
             return False
 
     def download_and_encode_base64(self, image_url: str) -> Tuple[bool, str]:
-        """下载图片并将其编码为Base64字符串"""
-        logger.info(f"{self.log_prefix} (B64) 下载并编码图片: {image_url[:50]}...")
+        """下载图片或处理Base64数据URL"""
+        logger.info(f"{self.log_prefix} (B64) 处理图片: {image_url[:50]}...")
+        
         try:
-            with urllib.request.urlopen(image_url, timeout=600) as response:
-                if response.status == 200:
-                    image_bytes = response.read()
-                    base64_encoded_image = base64.b64encode(image_bytes).decode("utf-8")
-                    logger.info(f"{self.log_prefix} (B64) 图片下载编码完成. Base64长度: {len(base64_encoded_image)}")
-                    return True, base64_encoded_image
+            # 检查是否为Base64数据URL
+            if image_url.startswith('data:image/'):
+                logger.info(f"{self.log_prefix} (B64) 检测到Base64数据URL")
+                
+                # 从数据URL中提取Base64部分
+                if ';base64,' in image_url:
+                    base64_data = image_url.split(';base64,', 1)[1]
+                    logger.info(f"{self.log_prefix} (B64) 从数据URL提取Base64完成. 长度: {len(base64_data)}")
+                    return True, base64_data
                 else:
-                    error_msg = f"下载图片失败 (状态: {response.status})"
-                    logger.error(f"{self.log_prefix} (B64) {error_msg} URL: {image_url[:30]}...")
+                    error_msg = "Base64数据URL格式不正确"
+                    logger.error(f"{self.log_prefix} (B64) {error_msg}")
                     return False, error_msg
+            else:
+                # 处理普通HTTP URL
+                logger.info(f"{self.log_prefix} (B64) 下载HTTP图片")
+                with urllib.request.urlopen(image_url, timeout=600) as response:
+                    if response.status == 200:
+                        image_bytes = response.read()
+                        base64_encoded_image = base64.b64encode(image_bytes).decode("utf-8")
+                        logger.info(f"{self.log_prefix} (B64) 图片下载编码完成. Base64长度: {len(base64_encoded_image)}")
+                        return True, base64_encoded_image
+                    else:
+                        error_msg = f"下载图片失败 (状态: {response.status})"
+                        logger.error(f"{self.log_prefix} (B64) {error_msg} URL: {image_url[:30]}...")
+                        return False, error_msg
+                        
         except Exception as e:
-            logger.error(f"{self.log_prefix} (B64) 下载或编码时错误: {e!r}", exc_info=True)
+            logger.error(f"{self.log_prefix} (B64) 处理图片时错误: {e!r}", exc_info=True)
             traceback.print_exc()
-            return False, f"下载或编码图片时发生错误: {str(e)[:50]}"
+            return False, f"处理图片时发生错误: {str(e)[:50]}"
 
     def process_api_response(self, result) -> Optional[str]:
         """统一处理API响应，提取图片数据"""
