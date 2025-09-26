@@ -18,41 +18,74 @@ class ApiClient:
         self.log_prefix = action_instance.log_prefix
 
     async def generate_image(self, prompt: str, model_config: Dict[str, Any], size: str,
-                           strength: float = None, input_image_base64: str = None) -> Tuple[bool, str]:
-        """根据API格式调用不同的请求方法"""
+                           strength: float = None, input_image_base64: str = None, max_retries: int = 2) -> Tuple[bool, str]:
+        """根据API格式调用不同的请求方法，支持重试"""
         api_format = model_config.get("format", "openai")
 
-        if api_format == "doubao":
-            return await asyncio.to_thread(
-                self._make_doubao_request,
-                prompt=prompt,
-                model_config=model_config,
-                size=size,
-                input_image_base64=input_image_base64
-            )
-        elif api_format == "modelscope":
-            return await asyncio.to_thread(
-                self._make_modelscope_request,
-                prompt=prompt,
-                model_config=model_config,
-                input_image_base64=input_image_base64
-            )
-        elif api_format == "gemini":
-            return await asyncio.to_thread(
-                self._make_gemini_request,
-                prompt=prompt,
-                model_config=model_config,
-                input_image_base64=input_image_base64
-            )
-        else:  # 默认为openai格式
-            return await asyncio.to_thread(
-                self._make_openai_image_request,
-                prompt=prompt,
-                model_config=model_config,
-                size=size,
-                strength=strength,
-                input_image_base64=input_image_base64
-            )
+        # 实现重试逻辑
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    logger.info(f"{self.log_prefix} API调用重试第 {attempt} 次")
+                    await asyncio.sleep(1.0 * attempt)  # 渐进式等待时间
+
+                logger.debug(f"{self.log_prefix} 开始API调用（尝试 {attempt + 1}/{max_retries + 1}）")
+
+                if api_format == "doubao":
+                    success, result = await asyncio.to_thread(
+                        self._make_doubao_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        size=size,
+                        input_image_base64=input_image_base64
+                    )
+                elif api_format == "modelscope":
+                    success, result = await asyncio.to_thread(
+                        self._make_modelscope_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        input_image_base64=input_image_base64
+                    )
+                elif api_format == "gemini":
+                    success, result = await asyncio.to_thread(
+                        self._make_gemini_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        input_image_base64=input_image_base64
+                    )
+                else:  # 默认为openai格式
+                    success, result = await asyncio.to_thread(
+                        self._make_openai_image_request,
+                        prompt=prompt,
+                        model_config=model_config,
+                        size=size,
+                        strength=strength,
+                        input_image_base64=input_image_base64
+                    )
+
+                # 如果成功，直接返回
+                if success:
+                    if attempt > 0:
+                        logger.info(f"{self.log_prefix} API调用重试第 {attempt} 次成功")
+                    return True, result
+
+                # 如果失败但还有重试次数
+                if attempt < max_retries:
+                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次API调用失败: {result}，将重试（剩余 {max_retries - attempt} 次）")
+                    continue
+                else:
+                    logger.error(f"{self.log_prefix} 重试 {max_retries} 次后API调用仍失败: {result}")
+                    return False, result
+
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(f"{self.log_prefix} 第 {attempt + 1} 次API调用异常: {e}，将重试（剩余 {max_retries - attempt} 次）")
+                    continue
+                else:
+                    logger.error(f"{self.log_prefix} 重试后API调用仍异常: {e!r}", exc_info=True)
+                    return False, f"API调用异常: {str(e)[:100]}"
+
+        return False, "API调用失败"
 
     def _make_doubao_request(self, prompt: str, model_config: Dict[str, Any], size: str, input_image_base64: str = None) -> Tuple[bool, str]:
         """发送豆包格式的HTTP请求生成图片"""
@@ -122,6 +155,8 @@ class ApiClient:
         base_url = model_config.get("base_url", "")
         generate_api_key = model_config.get("api_key", "")
         model = model_config.get("model", "")
+
+        # 直接拼接路径，base_url应该包含完整的API版本路径
         endpoint = f"{base_url.rstrip('/')}/images/generations"
 
         # 获取模型特定的配置参数
@@ -130,6 +165,7 @@ class ApiClient:
         seed = model_config.get("seed", 42)
         guidance_scale = model_config.get("guidance_scale", 2.5)
         watermark = model_config.get("watermark", True)
+        num_inference_steps = model_config.get("num_inference_steps", 20)
         prompt_add = prompt + custom_prompt_add
         negative_prompt = negative_prompt_add
 
@@ -165,6 +201,7 @@ class ApiClient:
             payload_dict["watermark"] = watermark
         else: #默认魔搭等其他
             payload_dict["guidance_scale"] = guidance_scale
+            payload_dict["num_inference_steps"] = num_inference_steps
 
         data = json.dumps(payload_dict).encode("utf-8")
         headers = {
@@ -255,10 +292,16 @@ class ApiClient:
             custom_prompt_add = model_config.get("custom_prompt_add", "")
             full_prompt = prompt + custom_prompt_add
 
+            # 获取其他配置参数
+            guidance_scale = model_config.get("guidance_scale", 2.5)
+            num_inference_steps = model_config.get("num_inference_steps", 20)
+
             # 构建请求数据
             request_data = {
                 "model": model_name,
-                "prompt": full_prompt
+                "prompt": full_prompt,
+                "guidance_scale": guidance_scale,
+                "num_inference_steps": num_inference_steps
             }
 
             # 如果有输入图片，需要特殊处理
@@ -281,9 +324,12 @@ class ApiClient:
 
             logger.info(f"{self.log_prefix} (魔搭) 发起异步图片生成请求，模型: {model_name}")
 
+            # 直接拼接路径，base_url应该包含完整的API版本路径
+            endpoint = f"{base_url.rstrip('/')}/images/generations"
+
             # 发送异步请求
             response = requests.post(
-                f"{base_url}/v1/images/generations",
+                endpoint,
                 headers=headers,
                 data=json.dumps(request_data, ensure_ascii=False).encode('utf-8'),
                 timeout=30
