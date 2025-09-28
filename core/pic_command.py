@@ -36,13 +36,13 @@ class PicGenerationCommand(BaseCommand):
         style_name = self.matched_groups.get("style", "").strip()
 
         if not style_name:
-            await self.send_text("请指定风格，格式：/pic <风格>\n当前可用风格：cartoon, 卡通\n可在配置文件styles节和style_aliases节中添加更多风格")
+            await self.send_text("请指定风格，格式：/pic <风格>\n可用：/pic styles 查看")
             return False, "缺少风格参数", True
 
         # 检查是否是配置管理保留词，避免冲突
         config_reserved_words = {"list", "models", "config", "set", "reset", "styles", "style", "help"}
         if style_name.lower() in config_reserved_words:
-            await self.send_text(f"'{style_name}' 是系统保留词，用于配置管理。\n请使用其他风格名称，当前可用风格：cartoon, 卡通")
+            await self.send_text(f"'{style_name}' 是保留词，请使用其他风格名称")
             return False, f"使用了保留词: {style_name}", True
 
         # 从配置中获取Command组件使用的模型
@@ -51,14 +51,14 @@ class PicGenerationCommand(BaseCommand):
         # 获取模型配置
         model_config = self._get_model_config(model_id)
         if not model_config:
-            await self.send_text(f"配置的模型 '{model_id}' 不存在，请检查配置文件")
+            await self.send_text(f"模型 '{model_id}' 不存在")
             return False, "模型配置不存在", True
 
         # 获取风格化提示词（支持别名映射）
         actual_style_name = self._resolve_style_alias(style_name)
         style_prompt = self._get_style_prompt(actual_style_name)
         if not style_prompt:
-            await self.send_text(f"风格 '{style_name}' 不存在\n当前可用风格：cartoon, 卡通\n可在配置文件styles节和style_aliases节中添加更多风格")
+            await self.send_text(f"风格 '{style_name}' 不存在")
             return False, f"风格 '{style_name}' 不存在", True
 
         # 使用风格提示词作为描述
@@ -74,12 +74,12 @@ class PicGenerationCommand(BaseCommand):
         input_image_base64 = await image_processor.get_recent_image()
 
         if not input_image_base64:
-            await self.send_text("未找到要处理的图片，请先发送一张图片")
+            await self.send_text("请先发送图片")
             return False, "未找到输入图片", True
 
         # 检查模型是否支持图生图
         if not model_config.get("support_img2img", True):
-            await self.send_text(f"模型 {model_id} 不支持图生图功能，请更换支持图生图的模型")
+            await self.send_text(f"模型 {model_id} 不支持图生图")
             return False, f"模型 {model_id} 不支持图生图", True
 
         # 显示开始信息
@@ -140,7 +140,7 @@ class PicGenerationCommand(BaseCommand):
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 命令执行异常: {e!r}", exc_info=True)
-            await self.send_text(f"命令执行时发生错误：{str(e)[:100]}")
+            await self.send_text(f"执行失败：{str(e)[:100]}")
             return False, f"命令执行异常: {str(e)}", True
 
     def _get_model_config(self, model_id: str) -> Optional[Dict[str, Any]]:
@@ -250,11 +250,13 @@ class PicConfigCommand(BaseCommand):
         params = self.matched_groups.get("params", "") or ""
         params = params.strip()
 
+        # 检查用户权限
+        has_permission = self._check_permission()
+
         # 对于需要管理员权限的操作进行权限检查
-        if action in ["set", "reset"]:
-            if not self._check_permission():
-                await self.send_text("你无权使用此命令，该命令仅限管理员使用", storage_message=False)
-                return False, "没有权限", True
+        if not has_permission and action not in ["list", "models"]:
+            await self.send_text("你无权使用此命令", storage_message=False)
+            return False, "没有权限", True
 
         if action == "list" or action == "models":
             return await self._list_models()
@@ -268,10 +270,9 @@ class PicConfigCommand(BaseCommand):
             await self.send_text(
                 "配置管理命令使用方法：\n"
                 "/pic list - 列出所有可用模型\n"
-                "/pic models - 列出所有可用模型\n"
                 "/pic config - 显示当前配置\n"
-                "/pic set <模型ID> - 设置图生图命令模型（仅管理员）\n"
-                "/pic reset - 重置为默认配置（仅管理员）"
+                "/pic set <模型ID> - 设置图生图命令模型\n"
+                "/pic reset - 重置为默认配置"
             )
             return False, "无效的操作参数", True
 
@@ -340,37 +341,20 @@ class PicConfigCommand(BaseCommand):
                 success = await self._update_command_model_config(model_id)
 
                 if success:
-                    await self.send_text(
-                        f"✅ 图生图命令模型已成功切换！\n\n"
-                        f"🔄 从: {current_command_model}\n"
-                        f"➡️ 到: {model_id} ({model_name})\n\n"
-                        f"💡 现在使用 /pic <风格> 命令时将使用新模型"
-                    )
+                    await self.send_text(f"✅ 已切换到模型: {model_id}")
                     return True, f"模型切换成功: {model_id}", True
                 else:
-                    await self.send_text(
-                        f"⚠️ 动态配置更新失败，请手动修改配置文件：\n\n"
-                        f"📝 修改步骤：\n"
-                        f"1. 编辑配置文件 config.toml\n"
-                        f"2. 将 components.pic_command_model 改为 '{model_id}'\n"
-                        f"3. 重启应用以生效"
-                    )
+                    await self.send_text(f"⚠️ 切换失败，请手动修改配置文件")
                     return False, "动态配置更新失败", True
 
             except Exception as e:
                 logger.error(f"{self.log_prefix} 动态更新配置失败: {e!r}")
-                await self.send_text(
-                    f"⚠️ 配置更新失败：{str(e)[:50]}\n\n"
-                    f"请手动修改配置文件：\n"
-                    f"• 编辑 config.toml\n"
-                    f"• 修改 components.pic_command_model = '{model_id}'\n"
-                    f"• 重启应用"
-                )
+                await self.send_text(f"⚠️ 配置更新失败：{str(e)[:50]}")
                 return False, f"配置更新异常: {str(e)}", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 设置模型失败: {e!r}")
-            await self.send_text(f"设置模型失败：{str(e)[:100]}")
+            await self.send_text(f"设置失败：{str(e)[:100]}")
             return False, f"设置模型失败: {str(e)}", True
 
     async def _update_command_model_config(self, model_id: str) -> bool:
@@ -407,7 +391,7 @@ class PicConfigCommand(BaseCommand):
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 重置配置失败: {e!r}")
-            await self.send_text(f"重置配置失败：{str(e)[:100]}")
+            await self.send_text(f"重置失败：{str(e)[:100]}")
             return False, f"重置配置失败: {str(e)}", True
 
     async def _show_current_config(self) -> Tuple[bool, Optional[str], bool]:
@@ -427,9 +411,6 @@ class PicConfigCommand(BaseCommand):
             default_config = self.get_config(f"models.{default_model}", {})
             command_config = self.get_config(f"models.{command_model}", {})
 
-            # 检查用户权限，决定显示内容
-            has_permission = self._check_permission()
-
             # 构建配置信息
             message_lines = [
                 "⚙️ 当前图片生成配置：\n",
@@ -446,23 +427,14 @@ class PicConfigCommand(BaseCommand):
                     f"   ⚡ 当前使用运行时覆盖配置"
                 ])
 
-            if has_permission:
-                # 管理员看到完整信息和操作提示
-                message_lines.extend([
-                    "\n📖 管理员命令：",
-                    "• /pic list - 查看所有模型",
-                    "• /pic set <模型ID> - 设置图生图模型",
-                    "• /pic reset - 重置为默认配置",
-                    "• /pic <风格> - 使用风格进行图生图"
-                ])
-            else:
-                # 普通用户只能看到基本功能提示
-                message_lines.extend([
-                    "\n📖 使用提示：",
-                    "• /pic list - 查看所有模型",
-                    "• /pic <风格> - 使用风格进行图生图",
-                    "• /pic styles - 查看可用风格"
-                ])
+            # 管理员命令提示
+            message_lines.extend([
+                "\n📖 管理员命令：",
+                "• /pic list - 查看所有模型",
+                "• /pic set <模型ID> - 设置图生图模型",
+                "• /pic reset - 重置为默认配置",
+                "• /pic <风格> - 使用风格进行图生图"
+            ])
 
             message = "\n".join(message_lines)
             await self.send_text(message)
@@ -470,19 +442,17 @@ class PicConfigCommand(BaseCommand):
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 显示配置失败: {e!r}")
-            await self.send_text(f"获取配置信息失败：{str(e)[:100]}")
+            await self.send_text(f"获取配置失败：{str(e)[:100]}")
             return False, f"显示配置失败: {str(e)}", True
 
     def _check_permission(self) -> bool:
         """检查用户权限"""
-        if (
-            not self.message
-            or not self.message.message_info
-            or not self.message.message_info.user_info
-            or str(self.message.message_info.user_info.user_id) not in self.get_config("components.admin_users", [])
-        ):
+        try:
+            admin_users = self.get_config("components.admin_users", [])
+            user_id = str(self.message.message_info.user_info.user_id) if self.message and self.message.message_info and self.message.message_info.user_info else None
+            return user_id in admin_users
+        except Exception:
             return False
-        return True
 
 
 class PicStyleCommand(BaseCommand):
@@ -501,6 +471,14 @@ class PicStyleCommand(BaseCommand):
         action = self.matched_groups.get("action", "").strip()
         params = self.matched_groups.get("params", "") or ""
         params = params.strip()
+
+        # 检查用户权限
+        has_permission = self._check_permission()
+
+        # style命令需要管理员权限
+        if action == "style" and not has_permission:
+            await self.send_text("你无权使用此命令", storage_message=False)
+            return False, "没有权限", True
 
         if action == "styles":
             return await self._list_styles()
@@ -602,32 +580,45 @@ class PicStyleCommand(BaseCommand):
     async def _show_help(self) -> Tuple[bool, Optional[str], bool]:
         """显示帮助信息"""
         try:
-            help_text = """
+            # 检查用户权限
+            has_permission = self._check_permission()
+
+            if has_permission:
+                # 管理员帮助信息
+                help_text = """
 🎨 图片风格系统帮助
 
 📋 基本命令：
 • /pic <风格名> - 对最近的图片应用风格
 • /pic styles - 列出所有可用风格
-• /pic style <风格名> - 查看风格详情
-
-⚙️ 配置管理：
 • /pic list - 查看所有模型
+
+⚙️ 管理员命令：
 • /pic config - 查看当前配置
-• /pic set <模型ID> - 查看模型设置说明
+• /pic set <模型ID> - 设置图生图模型
+• /pic reset - 重置为默认配置
 
 💡 使用流程：
 1. 发送一张图片
 2. 使用 /pic <风格名> 进行风格转换
 3. 等待处理完成
+                """
+            else:
+                # 普通用户帮助信息
+                help_text = """
+🎨 图片风格系统帮助
 
-🔧 高级功能：
-• 支持风格别名（如"卡通"对应"cartoon"）
-• 可配置多种AI模型
-• 支持结果缓存
-• 自动图片格式检测
+📋 可用命令：
+• /pic <风格名> - 对最近的图片应用风格
+• /pic styles - 列出所有可用风格
+• /pic list - 查看所有模型
 
-📖 更多信息请查看配置文件中的说明
-            """
+💡 使用流程：
+1. 发送一张图片
+2. 使用 /pic <风格名> 进行风格转换
+3. 等待处理完成
+                """
+
             await self.send_text(help_text.strip())
             return True, "帮助信息显示成功", True
 
@@ -635,6 +626,15 @@ class PicStyleCommand(BaseCommand):
             logger.error(f"{self.log_prefix} 显示帮助失败: {e!r}")
             await self.send_text(f"显示帮助信息失败：{str(e)[:100]}")
             return False, f"显示帮助失败: {str(e)}", True
+
+    def _check_permission(self) -> bool:
+        """检查用户权限"""
+        try:
+            admin_users = self.get_config("components.admin_users", [])
+            user_id = str(self.message.message_info.user_info.user_id) if self.message and self.message.message_info and self.message.message_info.user_info else None
+            return user_id in admin_users
+        except Exception:
+            return False
 
     def _resolve_style_alias(self, style_name: str) -> str:
         """解析风格别名，返回实际的风格名"""
