@@ -17,8 +17,8 @@ class PicGenerationCommand(BaseCommand):
 
     # Command基本信息
     command_name = "pic_generation_command"
-    command_description = "图生图命令，使用风格化提示词：/pic <风格>"
-    command_pattern = r"(?:.*，说：\s*)?/pic\s+(?P<style>[\u4e00-\u9fff\w]+)$"
+    command_description = "图生图命令，使用风格化提示词：/dr <风格>"
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<style>[\u4e00-\u9fff\w]+)$"
 
     def get_config(self, key: str, default=None):
         """覆盖get_config方法以支持动态配置"""
@@ -36,7 +36,7 @@ class PicGenerationCommand(BaseCommand):
         style_name = self.matched_groups.get("style", "").strip()
 
         if not style_name:
-            await self.send_text("请指定风格，格式：/pic <风格>\n可用：/pic styles 查看")
+            await self.send_text("请指定风格，格式：/dr <风格>\n可用：/dr styles 查看")
             return False, "缺少风格参数", True
 
         # 检查是否是配置管理保留词，避免冲突
@@ -230,8 +230,8 @@ class PicConfigCommand(BaseCommand):
 
     # Command基本信息
     command_name = "pic_config_command"
-    command_description = "图片生成配置管理：/pic <操作> [参数]"
-    command_pattern = r"(?:.*，说：\s*)?/pic\s+(?P<action>list|models|config|set|reset)(?:\s+(?P<params>.*))?$"
+    command_description = "图片生成配置管理：/dr <操作> [参数]"
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<action>list|models|config|set|reset)(?:\s+(?P<params>.*))?$"
 
     def get_config(self, key: str, default=None):
         """使用与PicGenerationCommand相同的配置覆盖"""
@@ -269,10 +269,10 @@ class PicConfigCommand(BaseCommand):
         else:
             await self.send_text(
                 "配置管理命令使用方法：\n"
-                "/pic list - 列出所有可用模型\n"
-                "/pic config - 显示当前配置\n"
-                "/pic set <模型ID> - 设置图生图命令模型\n"
-                "/pic reset - 重置为默认配置"
+                "/dr list - 列出所有可用模型\n"
+                "/dr config - 显示当前配置\n"
+                "/dr set <模型ID> - 设置图生图命令模型\n"
+                "/dr reset - 重置为默认配置"
             )
             return False, "无效的操作参数", True
 
@@ -318,13 +318,13 @@ class PicConfigCommand(BaseCommand):
         """设置图生图命令使用的模型"""
         try:
             if not model_id:
-                await self.send_text("请指定模型ID，格式：/pic set <模型ID>")
+                await self.send_text("请指定模型ID，格式：/dr set <模型ID>")
                 return False, "缺少模型ID参数", True
 
             # 检查模型是否存在
             model_config = self.get_config(f"models.{model_id}")
             if not model_config:
-                await self.send_text(f"模型 '{model_id}' 不存在，请使用 /pic list 查看可用模型")
+                await self.send_text(f"模型 '{model_id}' 不存在，请使用 /dr list 查看可用模型")
                 return False, f"模型 '{model_id}' 不存在", True
 
             # 获取当前配置
@@ -383,7 +383,7 @@ class PicConfigCommand(BaseCommand):
                 f"✅ 配置已重置为默认值！\n\n"
                 f"🔄 图生图命令模型: {default_model}\n"
                 f"💡 所有运行时配置覆盖已清除\n\n"
-                f"使用 /pic config 查看当前配置"
+                f"使用 /dr config 查看当前配置"
             )
 
             logger.info(f"{self.log_prefix} 配置已重置，清除了所有覆盖")
@@ -430,10 +430,10 @@ class PicConfigCommand(BaseCommand):
             # 管理员命令提示
             message_lines.extend([
                 "\n📖 管理员命令：",
-                "• /pic list - 查看所有模型",
-                "• /pic set <模型ID> - 设置图生图模型",
-                "• /pic reset - 重置为默认配置",
-                "• /pic <风格> - 使用风格进行图生图"
+                "• /dr list - 查看所有模型",
+                "• /dr set <模型ID> - 设置图生图模型",
+                "• /dr reset - 重置为默认配置",
+                "• /dr <风格> - 使用风格进行图生图"
             ])
 
             message = "\n".join(message_lines)
@@ -460,8 +460,8 @@ class PicStyleCommand(BaseCommand):
 
     # Command基本信息
     command_name = "pic_style_command"
-    command_description = "图片风格管理：/pic <操作> [参数]"
-    command_pattern = r"(?:.*，说：\s*)?/pic\s+(?P<action>styles|style|help)(?:\s+(?P<params>.*))?$"
+    command_description = "图片风格管理：/dr <操作> [参数]"
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<action>styles|style|help)(?:\s+(?P<params>.*))?$"
 
     async def execute(self) -> Tuple[bool, Optional[str], bool]:
         """执行风格管理命令"""
@@ -489,9 +489,9 @@ class PicStyleCommand(BaseCommand):
         else:
             await self.send_text(
                 "风格管理命令使用方法：\n"
-                "/pic styles - 列出所有可用风格\n"
-                "/pic style <风格名> - 显示风格详情\n"
-                "/pic help - 显示帮助信息"
+                "/dr styles - 列出所有可用风格\n"
+                "/dr style <风格名> - 显示风格详情\n"
+                "/dr help - 显示帮助信息"
             )
             return False, "无效的操作参数", True
 
@@ -520,7 +520,7 @@ class PicStyleCommand(BaseCommand):
 
                     message_lines.append(f"• {style_id}{alias_text}")
 
-            message_lines.append("\n💡 使用方法: /pic <风格名>")
+            message_lines.append("\n💡 使用方法: /dr <风格名>")
             message = "\n".join(message_lines)
             await self.send_text(message)
             return True, "风格列表查询成功", True
@@ -534,7 +534,7 @@ class PicStyleCommand(BaseCommand):
         """显示指定风格的详细信息"""
         try:
             if not style_name:
-                await self.send_text("请指定风格名，格式：/pic style <风格名>")
+                await self.send_text("请指定风格名，格式：/dr style <风格名>")
                 return False, "缺少风格名参数", True
 
             # 解析风格别名
@@ -542,7 +542,7 @@ class PicStyleCommand(BaseCommand):
             style_prompt = self.get_config(f"styles.{actual_style}")
 
             if not style_prompt:
-                await self.send_text(f"风格 '{style_name}' 不存在，请使用 /pic styles 查看可用风格")
+                await self.send_text(f"风格 '{style_name}' 不存在，请使用 /dr styles 查看可用风格")
                 return False, f"风格 '{style_name}' 不存在", True
 
             # 查找别名
@@ -564,7 +564,7 @@ class PicStyleCommand(BaseCommand):
 
             message_lines.extend([
                 "💡 使用方法：",
-                f"/pic {style_name}",
+                f"/dr {style_name}",
                 "\n⚠️ 注意：需要先发送一张图片作为输入"
             ])
 
@@ -589,18 +589,18 @@ class PicStyleCommand(BaseCommand):
 🎨 图片风格系统帮助
 
 📋 基本命令：
-• /pic <风格名> - 对最近的图片应用风格
-• /pic styles - 列出所有可用风格
-• /pic list - 查看所有模型
+• /dr <风格名> - 对最近的图片应用风格
+• /dr styles - 列出所有可用风格
+• /dr list - 查看所有模型
 
 ⚙️ 管理员命令：
-• /pic config - 查看当前配置
-• /pic set <模型ID> - 设置图生图模型
-• /pic reset - 重置为默认配置
+• /dr config - 查看当前配置
+• /dr set <模型ID> - 设置图生图模型
+• /dr reset - 重置为默认配置
 
 💡 使用流程：
 1. 发送一张图片
-2. 使用 /pic <风格名> 进行风格转换
+2. 使用 /dr <风格名> 进行风格转换
 3. 等待处理完成
                 """
             else:
@@ -609,13 +609,13 @@ class PicStyleCommand(BaseCommand):
 🎨 图片风格系统帮助
 
 📋 可用命令：
-• /pic <风格名> - 对最近的图片应用风格
-• /pic styles - 列出所有可用风格
-• /pic list - 查看所有模型
+• /dr <风格名> - 对最近的图片应用风格
+• /dr styles - 列出所有可用风格
+• /dr list - 查看所有模型
 
 💡 使用流程：
 1. 发送一张图片
-2. 使用 /pic <风格名> 进行风格转换
+2. 使用 /dr <风格名> 进行风格转换
 3. 等待处理完成
                 """
 
