@@ -52,10 +52,10 @@ class CustomPicPlugin(BasePlugin):
         },
         "components": {
             "enable_unified_generation": ConfigField(type=bool, default=True, description="是否启用智能图片生成Action，支持文生图和图生图自动识别"),
-            "enable_pic_command": ConfigField(type=bool, default=True, description="是否启用风格化图生图Command功能，支持/pic <风格>命令"),
-            "enable_pic_config": ConfigField(type=bool, default=True, description="是否启用模型配置管理命令，支持/pic list、/pic set等"),
-            "enable_pic_style": ConfigField(type=bool, default=True, description="是否启用风格管理命令，支持/pic styles、/pic style等"),
-            "pic_command_model": ConfigField(type=str, default="model1", description="Command组件使用的模型ID，可通过/pic set命令动态切换"),
+            "enable_pic_command": ConfigField(type=bool, default=True, description="是否启用风格化图生图Command功能，支持/dr <风格>命令"),
+            "enable_pic_config": ConfigField(type=bool, default=True, description="是否启用模型配置管理命令，支持/dr list、/dr set等"),
+            "enable_pic_style": ConfigField(type=bool, default=True, description="是否启用风格管理命令，支持/dr styles、/dr style等"),
+            "pic_command_model": ConfigField(type=str, default="model1", description="Command组件使用的模型ID，可通过/dr set命令动态切换"),
             "enable_debug_info": ConfigField(type=bool, default=False, description="是否启用调试信息显示，关闭后仅显示图片结果和错误信息"),
             "admin_users": ConfigField(
                 type=list,

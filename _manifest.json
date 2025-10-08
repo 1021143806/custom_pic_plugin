@@ -34,20 +34,20 @@
       {
         "type": "command",
         "name": "pic_generation_command",
-        "description": "风格化图生图命令：/pic <风格>",
-        "pattern": "/pic"
+        "description": "风格化图生图命令：/dr <风格>",
+        "pattern": "/dr"
       },
       {
         "type": "command",
         "name": "pic_config_command",
-        "description": "模型配置管理：/pic list、/pic set等",
-        "pattern": "/pic"
+        "description": "模型配置管理：/dr list、/dr set等",
+        "pattern": "/dr"
       },
       {
         "type": "command",
         "name": "pic_style_command",
-        "description": "风格管理：/pic styles、/pic style等",
-        "pattern": "/pic"
+        "description": "风格管理：/dr styles、/dr style等",
+        "pattern": "/dr"
       }
     ],
     "features": [
