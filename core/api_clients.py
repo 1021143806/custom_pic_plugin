@@ -583,8 +583,10 @@ class ApiClient:
             # 构建请求体
             request_data = {
                 "contents": [{
+                    "role": "user",
                     "parts": parts
                 }],
+                "safetySettings": model_config.get("safety_settings") or [],
                 "generationConfig": {
                     "responseModalities": ["TEXT", "IMAGE"]  # 关键配置
                 }
