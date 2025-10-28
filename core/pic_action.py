@@ -16,6 +16,7 @@ class Custom_Pic_Action(BaseAction):
     """统一的图片生成动作，智能检测文生图或图生图"""
 
     # 激活设置
+    activation_type = ActionActivationType.LLM_JUDGE  # 默认激活类型
     focus_activation_type = ActionActivationType.LLM_JUDGE  # Focus模式使用LLM判定，精确理解需求
     normal_activation_type = ActionActivationType.KEYWORD  # Normal模式使用关键词激活，快速响应
     mode_enable = ChatMode.ALL
