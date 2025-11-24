@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Tuple, Optional, Dict, Any
 
 from src.plugin_system.base.base_command import BaseCommand
@@ -17,8 +18,8 @@ class PicGenerationCommand(BaseCommand):
 
     # Command基本信息
     command_name = "pic_generation_command"
-    command_description = "图生图命令，使用风格化提示词：/dr <风格>"
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<style>[\u4e00-\u9fff\w]+)$"
+    command_description = "图生图命令，使用风格化提示词：/dr <风格> 或自然语言：/dr <描述>"
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<content>.+)$"
 
     def get_config(self, key: str, default=None):
         """覆盖get_config方法以支持动态配置"""
@@ -29,22 +30,49 @@ class PicGenerationCommand(BaseCommand):
         return super().get_config(key, default)
 
     async def execute(self) -> Tuple[bool, Optional[str], bool]:
-        """执行图生图命令"""
+        """执行图生图命令，智能判断风格模式或自然语言模式"""
         logger.info(f"{self.log_prefix} 执行图生图命令")
 
-        # 获取匹配的参数
-        style_name = self.matched_groups.get("style", "").strip()
+        # 获取匹配的内容
+        content = self.matched_groups.get("content", "").strip()
 
-        if not style_name:
-            await self.send_text("请指定风格，格式：/dr <风格>\n可用：/dr styles 查看")
-            return False, "缺少风格参数", True
+        if not content:
+            await self.send_text("请指定风格或描述，格式：/dr <风格> 或 /dr <描述>\n可用：/dr styles 查看风格列表")
+            return False, "缺少内容参数", True
 
         # 检查是否是配置管理保留词，避免冲突
         config_reserved_words = {"list", "models", "config", "set", "reset", "styles", "style", "help"}
-        if style_name.lower() in config_reserved_words:
-            await self.send_text(f"'{style_name}' 是保留词，请使用其他风格名称")
-            return False, f"使用了保留词: {style_name}", True
+        if content.lower() in config_reserved_words:
+            await self.send_text(f"'{content}' 是保留词，请使用其他名称")
+            return False, f"使用了保留词: {content}", True
 
+        # 智能判断：风格模式 vs 自然语言模式
+        # 解析风格别名
+        actual_style_name = self._resolve_style_alias(content)
+        style_prompt = self._get_style_prompt(actual_style_name)
+
+        # 判断逻辑：
+        # 1. 如果是单个词且存在对应风格 -> 风格模式（只支持图生图）
+        # 2. 如果是单个词但风格不存在 -> 提示风格不存在
+        # 3. 如果是多个词 -> 自然语言模式（智能判断文/图生图）
+        is_single_word = len(content.split()) == 1 and len(content) < 20
+
+        if is_single_word:
+            if style_prompt:
+                # 风格存在，使用风格模式（只支持图生图，必须有图片）
+                logger.info(f"{self.log_prefix} 识别为风格模式: {content}")
+                return await self._execute_style_mode(content, actual_style_name, style_prompt)
+            else:
+                # 风格不存在，提示用户
+                await self.send_text(f"风格 '{content}' 不存在，使用 /dr styles 查看所有风格")
+                return False, f"风格 '{content}' 不存在", True
+        else:
+            # 多个词，使用自然语言模式（智能判断文/图生图）
+            logger.info(f"{self.log_prefix} 识别为自然语言模式: {content}")
+            return await self._execute_natural_mode(content)
+
+    async def _execute_style_mode(self, style_name: str, actual_style_name: str, style_prompt: str) -> Tuple[bool, Optional[str], bool]:
+        """执行风格模式（只支持图生图，必须有输入图片）"""
         # 从配置中获取Command组件使用的模型
         model_id = self.get_config("components.pic_command_model", "model1")
 
@@ -53,13 +81,6 @@ class PicGenerationCommand(BaseCommand):
         if not model_config:
             await self.send_text(f"模型 '{model_id}' 不存在")
             return False, "模型配置不存在", True
-
-        # 获取风格化提示词（支持别名映射）
-        actual_style_name = self._resolve_style_alias(style_name)
-        style_prompt = self._get_style_prompt(actual_style_name)
-        if not style_prompt:
-            await self.send_text(f"风格 '{style_name}' 不存在")
-            return False, f"风格 '{style_name}' 不存在", True
 
         # 使用风格提示词作为描述
         final_description = style_prompt
@@ -142,6 +163,154 @@ class PicGenerationCommand(BaseCommand):
             logger.error(f"{self.log_prefix} 命令执行异常: {e!r}", exc_info=True)
             await self.send_text(f"执行失败：{str(e)[:100]}")
             return False, f"命令执行异常: {str(e)}", True
+
+    async def _execute_natural_mode(self, description: str) -> Tuple[bool, Optional[str], bool]:
+        """执行自然语言模式（智能判断文生图/图生图）
+
+        支持格式：
+        - /dr 画一只猫
+        - /dr 用model1画一只猫
+        """
+        # 尝试从描述中提取模型ID
+        extracted_model_id = self._extract_model_id(description)
+
+        if extracted_model_id:
+            model_id = extracted_model_id
+            # 移除模型指定部分
+            description = self._remove_model_pattern(description)
+            logger.info(f"{self.log_prefix} 从描述中提取模型ID: {model_id}")
+        else:
+            # 使用默认模型
+            model_id = self.get_config("components.pic_command_model", "model1")
+
+        # 获取模型配置
+        model_config = self._get_model_config(model_id)
+        if not model_config:
+            await self.send_text(f"模型 '{model_id}' 不存在")
+            return False, "模型配置不存在", True
+
+        # 检查是否启用调试信息
+        enable_debug = self.get_config("components.enable_debug_info", False)
+
+        # 智能检测：判断是文生图还是图生图
+        image_processor = ImageProcessor(self)
+        input_image_base64 = await image_processor.get_recent_image()
+        is_img2img_mode = input_image_base64 is not None
+
+        if is_img2img_mode:
+            # 图生图模式
+            # 检查模型是否支持图生图
+            if not model_config.get("support_img2img", True):
+                logger.warning(f"{self.log_prefix} 模型 {model_id} 不支持图生图，自动降级为文生图")
+                if enable_debug:
+                    await self.send_text(f"模型 {model_id} 不支持图生图，将为您生成新图片")
+                # 降级为文生图
+                input_image_base64 = None
+                is_img2img_mode = False
+
+        mode_text = "图生图" if is_img2img_mode else "文生图"
+        logger.info(f"{self.log_prefix} 自然语言模式使用{mode_text}")
+
+        if enable_debug:
+            await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}：{description[:50]}...")
+
+        try:
+            # 获取重试次数配置
+            max_retries = self.get_config("components.max_retries", 2)
+
+            # 调用API客户端生成图片
+            api_client = ApiClient(self)
+            success, result = await api_client.generate_image(
+                prompt=description,
+                model_config=model_config,
+                size=model_config.get("default_size", "1024x1024"),
+                strength=0.7 if is_img2img_mode else None,
+                input_image_base64=input_image_base64,
+                max_retries=max_retries
+            )
+
+            if success:
+                # 处理结果
+                if result.startswith(("iVBORw", "/9j/", "UklGR", "R0lGOD")):  # Base64
+                    send_success = await self.send_image(result)
+                    if send_success:
+                        if enable_debug:
+                            await self.send_text(f"{mode_text}完成！")
+                        return True, f"{mode_text}命令执行成功", True
+                    else:
+                        await self.send_text("图片发送失败")
+                        return False, "图片发送失败", True
+                else:  # URL
+                    try:
+                        # 下载并转换为base64
+                        encode_success, encode_result = await asyncio.to_thread(
+                            self._download_and_encode_base64, result
+                        )
+                        if encode_success:
+                            send_success = await self.send_image(encode_result)
+                            if send_success:
+                                if enable_debug:
+                                    await self.send_text(f"{mode_text}完成！")
+                                return True, f"{mode_text}命令执行成功", True
+                            else:
+                                await self.send_text("图片发送失败")
+                                return False, "图片发送失败", True
+                        else:
+                            await self.send_text(f"图片处理失败：{encode_result}")
+                            return False, f"图片处理失败: {encode_result}", True
+                    except Exception as e:
+                        logger.error(f"{self.log_prefix} 图片下载编码失败: {e!r}")
+                        await self.send_text("图片下载失败")
+                        return False, "图片下载失败", True
+            else:
+                await self.send_text(f"{mode_text}失败：{result}")
+                return False, f"{mode_text}失败: {result}", True
+
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 命令执行异常: {e!r}", exc_info=True)
+            await self.send_text(f"执行失败：{str(e)[:100]}")
+            return False, f"命令执行异常: {str(e)}", True
+
+    def _extract_model_id(self, description: str) -> Optional[str]:
+        """从描述中提取模型ID
+
+        支持格式：
+        - 用model1画...
+        - 用模型1画...
+        - model1画...
+        - 使用model2...
+        """
+        # 匹配模式：用/使用 + model/模型 + 数字/ID
+        patterns = [
+            r'(?:用|使用)\s*(model\d+)',  # 用model1, 使用model2
+            r'(?:用|使用)\s*(?:模型|型号)\s*(\d+)',  # 用模型1, 使用型号2
+            r'^(model\d+)',  # model1开头
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, description, re.IGNORECASE)
+            if match:
+                model_id = match.group(1)
+                # 如果匹配到数字，转换为modelX格式
+                if model_id.isdigit():
+                    model_id = f"model{model_id}"
+                return model_id.lower()
+
+        return None
+
+    def _remove_model_pattern(self, description: str) -> str:
+        """移除描述中的模型指定部分"""
+        # 移除模式
+        patterns = [
+            r'(?:用|使用)\s*model\d+\s*(?:画|生成|创作)?',
+            r'(?:用|使用)\s*(?:模型|型号)\s*\d+\s*(?:画|生成|创作)?',
+            r'^model\d+\s*(?:画|生成|创作)?',
+        ]
+
+        for pattern in patterns:
+            description = re.sub(pattern, '', description, flags=re.IGNORECASE)
+
+        return description.strip()
 
     def _get_model_config(self, model_id: str) -> Optional[Dict[str, Any]]:
         """获取模型配置"""
