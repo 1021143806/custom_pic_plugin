@@ -369,8 +369,8 @@ class Custom_Pic_Action(BaseAction):
             # 对镜自拍风格（适用于有镜子的室内场景）
             selfie_scene = "mirror selfie, holding phone, reflection in mirror, bathroom, bedroom mirror, indoor"
         else:
-            # 标准自拍风格（适用于户外或无镜子场景）
-            selfie_scene = "selfie, holding phone with one hand, front camera view, arm extended"
+            # 标准自拍风格（适用于户外或无镜子场景，前置摄像头视角）
+            selfie_scene = "selfie, front camera view, arm extended, looking at camera"
 
         # 4. 智能手部动作库（40+种动作）
         hand_actions = [
