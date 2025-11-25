@@ -14,7 +14,7 @@ class CustomPicPlugin(BasePlugin):
 
     # 插件基本信息
     plugin_name = "custom_pic_plugin"  # 插件唯一标识符
-    plugin_version = "3.1.2"  # 插件版本号
+    plugin_version = "3.2.0"  # 插件版本号
     plugin_author = "Ptrel，Rabbit"  # 插件作者
     enable_plugin = True  # 是否启用插件
     dependencies: List[str] = []  # 插件依赖列表
@@ -35,7 +35,7 @@ class CustomPicPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="custom_pic_plugin", description="智能多模型图片生成插件，支持文生图/图生图自动识别", required=True),
-            "config_version": ConfigField(type=str, default="3.1.2", description="插件配置版本号"),
+            "config_version": ConfigField(type=str, default="3.2.0", description="插件配置版本号"),
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件，开启后可使用画图和风格转换功能")
         },
         "generation": {
@@ -122,8 +122,7 @@ class CustomPicPlugin(BasePlugin):
             "default_size": ConfigField(
                 type=str,
                 default="1024x1024",
-                description="默认图片尺寸，建议使用1024x1024以获得最佳效果",
-                choices=["512x512", "1024x1024", "1024x1280", "1280x1024", "1024x1536", "1536x1024"]
+                description="默认图片尺寸。OpenAI/豆包/魔搭格式填写如 1024x1024。Gemini格式填写宽高比如 16:9 或 16:9-2K，具体参考官方文档"
             ),
             "seed": ConfigField(type=int, default=42, description="随机种子，固定值可确保结果可复现"),
             "guidance_scale": ConfigField(type=float, default=2.5, description="指导强度。豆包推荐5.5，其他推荐2.5。越高越严格遵循提示词"),
@@ -140,6 +139,11 @@ class CustomPicPlugin(BasePlugin):
             ),
             "support_img2img": ConfigField(type=bool, default=True, description="是否支持图生图。不支持时自动降级为文生图"),
             "num_inference_steps": ConfigField(type=int, default=20, description="推理步数，影响质量和速度。推荐20-50"),
+            "selfie_prompt_add": ConfigField(
+                type=str,
+                default="",
+                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform'"
+            ),
         }
     }
 
