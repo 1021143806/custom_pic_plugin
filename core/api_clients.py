@@ -543,8 +543,12 @@ class ApiClient:
                 "Content-Type": "application/json"
             }
 
+            # 获取模型特定的配置参数
+            custom_prompt_add = model_config.get("custom_prompt_add", "")
+            full_prompt = prompt + custom_prompt_add
+
             # 构建请求内容
-            parts = [{"text": prompt}]
+            parts = [{"text": full_prompt}]
 
             # 如果有输入图片，添加到请求中
             if input_image_base64:
@@ -583,13 +587,21 @@ class ApiClient:
             # 构建请求体
             request_data = {
                 "contents": [{
+                    "role": "user",
                     "parts": parts
                 }],
+                "safetySettings": model_config.get("safety_settings") or [],
                 "generationConfig": {
                     "responseModalities": ["TEXT", "IMAGE"]  # 关键配置
                 }
             }
-        
+
+            # 添加 Gemini 图片尺寸配置
+            image_config = self._build_gemini_image_config(model_name, model_config)
+            if image_config:
+                request_data["generationConfig"]["imageConfig"] = image_config
+                logger.info(f"{self.log_prefix} (Gemini) 图片配置: {image_config}")
+
             logger.info(f"{self.log_prefix} (Gemini) 发起图片请求: {model_name}")
 
             # 获取代理配置
@@ -660,3 +672,61 @@ class ApiClient:
         except Exception as e:
             logger.error(f"{self.log_prefix} (Gemini) 请求异常: {e!r}", exc_info=True)
             return False, f"请求失败: {str(e)}"
+
+    def _build_gemini_image_config(self, model_name: str, model_config: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        """构建 Gemini 图片配置
+
+        支持的 default_size 格式：
+        - "16:9"      → { "aspectRatio": "16:9" }
+        - "16:9-2K"   → { "aspectRatio": "16:9", "imageSize": "2K" }
+        - "1:1-4K"    → { "aspectRatio": "1:1", "imageSize": "4K" }
+
+        Args:
+            model_name: 模型名称
+            model_config: 模型配置
+
+        Returns:
+            imageConfig 字典，如果不需要配置则返回 None
+        """
+        size = model_config.get("default_size", "").strip()
+
+        if not size:
+            return None
+
+        image_config = {}
+
+        # 检查是否包含 imageSize（用 - 分隔）
+        if "-" in size:
+            # 格式：16:9-2K 或 1:1-4K
+            parts = size.split("-", 1)
+            aspect_ratio = parts[0].strip()
+            image_size = parts[1].strip().upper()  # 1K, 2K, 4K
+
+            image_config["aspectRatio"] = aspect_ratio
+
+            # 仅 Gemini 3 Pro 支持 imageSize
+            if "gemini-3" in model_name.lower():
+                if image_size in ["1K", "2K", "4K"]:
+                    image_config["imageSize"] = image_size
+                else:
+                    logger.warning(f"{self.log_prefix} (Gemini) 无效的 imageSize: {image_size}，仅支持 1K/2K/4K")
+            else:
+                logger.warning(f"{self.log_prefix} (Gemini) imageSize 仅支持 Gemini 3 Pro，当前模型: {model_name}")
+        else:
+            # 格式：16:9（纯宽高比）
+            # 验证是否是有效的宽高比格式（包含冒号）
+            if ":" in size:
+                image_config["aspectRatio"] = size
+            elif "x" in size.lower():
+                # 检测到传统格式（如 1024x1024），给出警告
+                logger.warning(
+                    f"{self.log_prefix} (Gemini) 检测到传统尺寸格式 '{size}'，Gemini 需要宽高比格式（如 16:9）。"
+                    f"将使用默认值 1:1"
+                )
+                image_config["aspectRatio"] = "1:1"
+            else:
+                # 无法识别的格式
+                logger.warning(f"{self.log_prefix} (Gemini) 无法识别的尺寸格式 '{size}'，使用默认值 1:1")
+                image_config["aspectRatio"] = "1:1"
+
+        return image_config if image_config else None

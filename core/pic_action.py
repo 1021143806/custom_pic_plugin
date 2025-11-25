@@ -37,7 +37,9 @@ class Custom_Pic_Action(BaseAction):
         # 图生图关键词
         "图生图", "修改图片", "基于这张图", "img2img", "重画", "改图", "图片修改",
         "改成", "换成", "变成", "转换成", "风格", "画风", "改风格", "换风格",
-        "这张图", "这个图", "图片风格", "改画风", "重新画", "再画", "重做"
+        "这张图", "这个图", "图片风格", "改画风", "重新画", "再画", "重做",
+        # 自拍关键词
+        "自拍", "selfie", "拍照", "对镜自拍", "镜子自拍", "照镜子"
     ]
 
     # LLM判定提示词（用于Focus模式）
@@ -57,6 +59,11 @@ class Custom_Pic_Action(BaseAction):
 3. 用户想要改变现有图片的风格、颜色、内容等
 4. 用户要求在现有图片基础上添加或删除元素
 
+**自拍场景：**
+1. 用户明确要求你进行自拍、拍照等
+2. 用户提到"自拍"、"selfie"、"照镜子"、"对镜自拍"等关键词
+3. 用户想要看到你的照片或形象
+
 **绝对不要使用的情况：**
 1. 纯文字聊天和问答
 2. 只是提到"图片"、"画"等词但不是要求生成
@@ -70,10 +77,34 @@ class Custom_Pic_Action(BaseAction):
 
     # 动作参数定义
     action_parameters = {
-        "description": "图片描述，输入你想要生成或修改的图片的描述，将描述翻译为英文单词组合，并用','分隔，描述中不要出现中文，必填",
+        "description": """作为AI绘画提示词工程师，你需要根据用户的需求生成高质量的英文绘画提示词。
+
+**核心要求：**
+1. 将所有中文描述翻译为英文单词组合，用逗号分隔
+2. 提示词必须全部为英文，不能出现任何中文字符
+3. 遵循"主体,动作,环境,画质"的结构
+4. 使用括号和权重标记强调重点元素，如(keyword:1.3)
+
+**标准提示词格式：**
+- 主体描述：清晰定义主体特征（人物、动物、物体等）
+- 动作状态：描述主体的姿态、动作或状态
+- 环境背景：场景设置、光照、氛围
+- 画质标签：masterpiece, best quality, high resolution等
+
+**示例：**
+用户："画一个在海边的女孩"
+输出："1girl, standing, beach, ocean, sunset, warm lighting, masterpiece, best quality"
+
+用户："可爱的猫咪在睡觉"
+输出："cute cat, sleeping, curled up, soft lighting, cozy, fluffy fur, masterpiece, best quality"
+
+请根据用户的描述，生成符合以上格式的英文提示词。必填参数。""",
         "model_id": "要使用的模型ID（如model1、model2、model3等，默认使用default_model配置的模型）",
         "strength": "图生图强度，0.1-1.0之间，值越高变化越大（仅图生图时使用，可选，默认0.7）",
         "size": "图片尺寸，如512x512、1024x1024等（可选，不指定则使用模型默认尺寸）",
+        "selfie_mode": "是否启用自拍模式（true/false，可选，默认false）。启用后会自动添加自拍场景和手部动作",
+        "selfie_style": "自拍风格，可选值：standard（标准自拍，适用于户外或无镜子场景），mirror（对镜自拍，适用于有镜子的室内场景）。仅在selfie_mode=true时生效，可选，默认standard",
+        "free_hand_action": "自由手部动作描述（英文）。如果指定此参数，将使用此动作而不是随机生成。仅在selfie_mode=true时生效，可选"
     }
 
     # 动作使用场景
@@ -100,6 +131,9 @@ class Custom_Pic_Action(BaseAction):
         model_id = self.action_data.get("model_id", "").strip()
         strength = self.action_data.get("strength", 0.7)
         size = self.action_data.get("size", "").strip()
+        selfie_mode = self.action_data.get("selfie_mode", False)
+        selfie_style = self.action_data.get("selfie_style", "standard").strip().lower()
+        free_hand_action = self.action_data.get("free_hand_action", "").strip()
 
         # 参数验证
         if not description:
@@ -119,6 +153,12 @@ class Custom_Pic_Action(BaseAction):
                 strength = 0.7
         except (ValueError, TypeError):
             strength = 0.7
+
+        # 处理自拍模式
+        if selfie_mode:
+            logger.info(f"{self.log_prefix} 启用自拍模式，风格: {selfie_style}")
+            description = self._process_selfie_prompt(description, selfie_style, free_hand_action, model_id)
+            logger.info(f"{self.log_prefix} 自拍模式处理后的提示词: {description[:100]}...")
 
         # **智能检测：判断是文生图还是图生图**
         input_image_base64 = await self.image_processor.get_recent_image()
@@ -302,3 +342,133 @@ class Custom_Pic_Action(BaseAction):
 
         except (ValueError, AttributeError):
             return False
+
+    def _process_selfie_prompt(self, description: str, selfie_style: str, free_hand_action: str, model_id: str) -> str:
+        """处理自拍模式的提示词生成
+
+        Args:
+            description: 用户提供的描述
+            selfie_style: 自拍风格（standard/mirror）
+            free_hand_action: LLM生成的手部动作（可选）
+            model_id: 模型ID，用于获取Bot默认形象
+
+        Returns:
+            处理后的完整提示词
+        """
+        import random
+
+        # 1. 添加强制主体设置
+        forced_subject = "(1girl:1.4), (solo:1.3)"
+
+        # 2. 从模型配置中获取Bot的默认形象特征
+        model_config = self._get_model_config(model_id)
+        bot_appearance = model_config.get("selfie_prompt_add", "").strip() if model_config else ""
+
+        # 3. 定义自拍风格特定的场景设置
+        if selfie_style == "mirror":
+            # 对镜自拍风格（适用于有镜子的室内场景）
+            selfie_scene = "mirror selfie, holding phone, reflection in mirror, bathroom, bedroom mirror, indoor"
+        else:
+            # 标准自拍风格（适用于户外或无镜子场景，前置摄像头视角）
+            selfie_scene = "selfie, front camera view, arm extended, looking at camera"
+
+        # 4. 智能手部动作库（40+种动作）
+        hand_actions = [
+            # 经典手势
+            "peace sign, v sign",
+            "waving hand, friendly gesture",
+            "thumbs up, positive gesture",
+            "finger heart, cute pose",
+            "ok sign, hand gesture",
+
+            # 可爱动作
+            "touching face gently, soft expression",
+            "hand near chin, thinking pose",
+            "covering mouth with hand, shy expression",
+            "both hands on cheeks, surprised",
+            "one hand in hair, casual pose",
+
+            # 时尚姿态
+            "hand on hip, confident pose",
+            "adjusting hair, elegant gesture",
+            "fixing collar, neat appearance",
+            "checking nails, stylish pose",
+            "hand behind head, relaxed",
+
+            # 表情包系列
+            "saluting, military pose",
+            "finger gun, playful gesture",
+            "crossed arms, cool pose",
+            "hand shielding eyes, looking far",
+            "hands clasped together, pleading",
+
+            # 甜美系列
+            "blowing kiss, romantic",
+            "heart shape with hands",
+            "hugging self, content",
+            "cat paw gesture, playful",
+            "bunny ears with fingers",
+
+            # 自然动作
+            "resting chin on hand, relaxed",
+            "stretching arms, energetic",
+            "fixing glasses, nerdy",
+            "touching necklace, delicate",
+            "adjusting earring, fashionable",
+
+            # 情绪表达
+            "fist pump, excited",
+            "hands together praying, hopeful",
+            "wiping forehead, relieved",
+            "scratching head, confused",
+            "finger on lips, secretive",
+
+            # 特殊pose
+            "making frame with fingers, photographer pose",
+            "counting on fingers, cute",
+            "pointing at viewer, engaging",
+            "covering one eye, mysterious",
+            "both hands up, surprised reaction"
+        ]
+
+        # 5. 选择手部动作
+        if free_hand_action:
+            # 优先使用LLM生成的手部动作
+            logger.info(f"{self.log_prefix} 使用LLM生成的手部动作: {free_hand_action}")
+            hand_action = free_hand_action
+        else:
+            # 兜底：随机选择一个手部动作
+            hand_action = random.choice(hand_actions)
+            logger.info(f"{self.log_prefix} 随机选择手部动作: {hand_action}")
+
+        # 6. 组装完整提示词
+        # 格式：强制主体 + Bot形象 + 手部动作 + 自拍场景 + 用户描述
+        prompt_parts = [forced_subject]
+
+        if bot_appearance:
+            prompt_parts.append(bot_appearance)
+
+        prompt_parts.extend([
+            hand_action,
+            selfie_scene,
+            description
+        ])
+
+        # 7. 合并并去重
+        final_prompt = ", ".join(prompt_parts)
+
+        # 8. 简单的去重处理（避免重复关键词）
+        # 将提示词拆分，去除重复的关键词组合
+        keywords = [kw.strip() for kw in final_prompt.split(',')]
+        seen = set()
+        unique_keywords = []
+        for kw in keywords:
+            kw_lower = kw.lower()
+            if kw_lower not in seen and kw:
+                seen.add(kw_lower)
+                unique_keywords.append(kw)
+
+        final_prompt = ", ".join(unique_keywords)
+
+        logger.info(f"{self.log_prefix} 自拍模式最终提示词: {final_prompt[:200]}...")
+        return final_prompt
