@@ -543,8 +543,12 @@ class ApiClient:
                 "Content-Type": "application/json"
             }
 
+            # 获取模型特定的配置参数
+            custom_prompt_add = model_config.get("custom_prompt_add", "")
+            full_prompt = prompt + custom_prompt_add
+
             # 构建请求内容
-            parts = [{"text": prompt}]
+            parts = [{"text": full_prompt}]
 
             # 如果有输入图片，添加到请求中
             if input_image_base64:
