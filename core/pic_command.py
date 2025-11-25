@@ -52,22 +52,14 @@ class PicGenerationCommand(BaseCommand):
         style_prompt = self._get_style_prompt(actual_style_name)
 
         # 判断逻辑：
-        # 1. 如果是单个词且存在对应风格 -> 风格模式（只支持图生图）
-        # 2. 如果是单个词但风格不存在 -> 提示风格不存在
-        # 3. 如果是多个词 -> 自然语言模式（智能判断文/图生图）
-        is_single_word = len(content.split()) == 1 and len(content) < 20
-
-        if is_single_word:
-            if style_prompt:
-                # 风格存在，使用风格模式（只支持图生图，必须有图片）
-                logger.info(f"{self.log_prefix} 识别为风格模式: {content}")
-                return await self._execute_style_mode(content, actual_style_name, style_prompt)
-            else:
-                # 风格不存在，提示用户
-                await self.send_text(f"风格 '{content}' 不存在，使用 /dr styles 查看所有风格")
-                return False, f"风格 '{content}' 不存在", True
+        # 1. 如果配置文件中存在该风格 -> 风格模式（只支持图生图）
+        # 2. 如果配置文件中不存在该风格 -> 自然语言模式（智能判断文/图生图）
+        if style_prompt:
+            # 配置文件中存在该风格，使用风格模式（只支持图生图，必须有图片）
+            logger.info(f"{self.log_prefix} 识别为风格模式: {content}")
+            return await self._execute_style_mode(content, actual_style_name, style_prompt)
         else:
-            # 多个词，使用自然语言模式（智能判断文/图生图）
+            # 配置文件中不存在该风格，使用自然语言模式（智能判断文/图生图）
             logger.info(f"{self.log_prefix} 识别为自然语言模式: {content}")
             return await self._execute_natural_mode(content)
 

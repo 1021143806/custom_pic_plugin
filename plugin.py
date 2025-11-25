@@ -35,7 +35,7 @@ class CustomPicPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="custom_pic_plugin", description="智能多模型图片生成插件，支持文生图/图生图自动识别", required=True),
-            "config_version": ConfigField(type=str, default="3.1.2", description="插件配置版本号"),
+            "config_version": ConfigField(type=str, default="3.2.0", description="插件配置版本号"),
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件，开启后可使用画图和风格转换功能")
         },
         "generation": {
