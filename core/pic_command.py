@@ -47,21 +47,29 @@ class PicGenerationCommand(BaseCommand):
             return False, f"使用了保留词: {content}", True
 
         # 智能判断：风格模式 vs 自然语言模式
-        # 解析风格别名
+        # 步骤1：优先检查配置文件中是否有该风格
         actual_style_name = self._resolve_style_alias(content)
         style_prompt = self._get_style_prompt(actual_style_name)
 
-        # 判断逻辑：
-        # 1. 如果配置文件中存在该风格 -> 风格模式（只支持图生图）
-        # 2. 如果配置文件中不存在该风格 -> 自然语言模式（智能判断文/图生图）
         if style_prompt:
-            # 配置文件中存在该风格，使用风格模式（只支持图生图，必须有图片）
+            # 配置文件中存在该风格 → 风格模式（只支持图生图）
             logger.info(f"{self.log_prefix} 识别为风格模式: {content}")
             return await self._execute_style_mode(content, actual_style_name, style_prompt)
-        else:
-            # 配置文件中不存在该风格，使用自然语言模式（智能判断文/图生图）
+
+        # 步骤2：配置中没有该风格，判断是否是自然语言
+        # 检测自然语言特征
+        action_words = ['画', '生成', '绘制', '创作', '制作', '画成', '变成', '改成', '用', '来', '帮我', '给我']
+        has_action_word = any(word in content for word in action_words)
+        is_long_text = len(content) > 6
+
+        if has_action_word or is_long_text:
+            # 包含动作词或文本较长 → 自然语言模式（智能判断文/图生图）
             logger.info(f"{self.log_prefix} 识别为自然语言模式: {content}")
             return await self._execute_natural_mode(content)
+        else:
+            # 短词且不包含动作词 → 可能是拼错的风格名，提示用户
+            await self.send_text(f"风格 '{content}' 不存在，使用 /dr styles 查看所有风格")
+            return False, f"风格 '{content}' 不存在", True
 
     async def _execute_style_mode(self, style_name: str, actual_style_name: str, style_prompt: str) -> Tuple[bool, Optional[str], bool]:
         """执行风格模式（只支持图生图，必须有输入图片）"""
