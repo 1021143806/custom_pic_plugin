@@ -692,13 +692,19 @@ class ApiClient:
         Args:
             model_name: 模型名称
             model_config: 模型配置
-            llm_size: LLM分析返回的尺寸（像素格式，如 "1024x1024"）
+            llm_size: 传入的尺寸参数（可能是处理后的，如 "-2K"）
 
         Returns:
             imageConfig 字典，如果不需要配置则返回 None
         """
         fixed_size_enabled = model_config.get("fixed_size_enabled", False)
         default_size = model_config.get("default_size", "").strip()
+
+        # 优先使用原始的 LLM 尺寸（从 model_config 中获取）
+        llm_original_size = model_config.get("_llm_original_size", "").strip()
+        if not llm_original_size:
+            # 如果没有原始尺寸，尝试使用传入的 llm_size
+            llm_original_size = llm_size if llm_size else None
 
         # 像素格式转宽高比的内部函数
         def convert_pixel_to_aspect(pixel_size: str) -> Optional[str]:
@@ -762,12 +768,12 @@ class ApiClient:
         # === 逻辑分支 ===
         if not fixed_size_enabled:
             # fixed_size_enabled = false: 完全使用 LLM 的 size
-            if llm_size:
-                final_aspect_ratio = convert_pixel_to_aspect(llm_size)
+            if llm_original_size:
+                final_aspect_ratio = convert_pixel_to_aspect(llm_original_size)
                 if final_aspect_ratio:
-                    logger.info(f"{self.log_prefix} (Gemini) 使用 LLM 尺寸: {llm_size} → {final_aspect_ratio}")
+                    logger.info(f"{self.log_prefix} (Gemini) 使用 LLM 尺寸: {llm_original_size} → {final_aspect_ratio}")
                 else:
-                    logger.warning(f"{self.log_prefix} (Gemini) LLM 尺寸格式无效: {llm_size}，将不设置宽高比")
+                    logger.warning(f"{self.log_prefix} (Gemini) LLM 尺寸格式无效: {llm_original_size}，将不设置宽高比")
             else:
                 logger.info(f"{self.log_prefix} (Gemini) LLM 未返回尺寸，将不设置宽高比")
         else:
@@ -780,13 +786,13 @@ class ApiClient:
             if default_size.startswith("-"):
                 # 需要从 LLM size 提取宽高比
                 resolution = default_size[1:].strip().upper()  # 提取 "2K"
-                if llm_size:
-                    final_aspect_ratio = convert_pixel_to_aspect(llm_size)
+                if llm_original_size:
+                    final_aspect_ratio = convert_pixel_to_aspect(llm_original_size)
                     if final_aspect_ratio:
                         final_image_size = resolution
-                        logger.info(f"{self.log_prefix} (Gemini) 使用混合模式: LLM宽高比 {final_aspect_ratio} + 配置分辨率 {resolution}")
+                        logger.info(f"{self.log_prefix} (Gemini) 使用混合模式: LLM宽高比 {final_aspect_ratio} (来自 {llm_original_size}) + 配置分辨率 {resolution}")
                     else:
-                        logger.warning(f"{self.log_prefix} (Gemini) LLM 尺寸无效: {llm_size}，无法提取宽高比")
+                        logger.warning(f"{self.log_prefix} (Gemini) LLM 尺寸无效: {llm_original_size}，无法提取宽高比")
                         return None
                 else:
                     logger.warning(f"{self.log_prefix} (Gemini) default_size='{default_size}' 需要 LLM 提供宽高比，但 LLM 未返回尺寸")

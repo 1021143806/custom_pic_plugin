@@ -210,8 +210,11 @@ class Custom_Pic_Action(BaseAction):
         api_format = model_config.get("format", "openai")
         enable_default_size = model_config.get("fixed_size_enabled", False)
 
+        # 保留原始的 LLM 尺寸（用于 Gemini）
+        llm_original_size = size if size else None
+
         if enable_default_size:
-            size = None 
+            size = None
             logger.info(f"{self.log_prefix} 使用自定义固定大小")
         image_size = size or model_config.get("default_size", "1024x1024")
 
@@ -244,6 +247,11 @@ class Custom_Pic_Action(BaseAction):
             )
 
         try:
+            # 对于 Gemini 格式，将原始 LLM 尺寸添加到 model_config 中
+            if api_format == "gemini" and llm_original_size:
+                model_config = dict(model_config)  # 创建副本避免修改原配置
+                model_config["_llm_original_size"] = llm_original_size
+
             # 调用API客户端生成图片
             success, result = await self.api_client.generate_image(
                 prompt=description,
@@ -323,22 +331,68 @@ class Custom_Pic_Action(BaseAction):
         return model_config or {}
 
     def _validate_image_size(self, size: str) -> bool:
-        """验证图片尺寸格式是否正确"""
+        """验证图片尺寸格式是否正确
+
+        支持的格式：
+        1. 像素格式（其他 API）：1024x1024、512x512
+        2. Gemini 宽高比：16:9、1:1、4:3
+        3. Gemini 完整格式：16:9-2K、1:1-4K
+        4. Gemini 分辨率：-2K、-4K
+        """
         if not size or not isinstance(size, str):
             return False
 
         try:
-            # 支持格式: "1024x1024", "512x512", "1024*1024" 等
-            if 'x' in size:
-                width, height = size.split('x', 1)
-            elif '*' in size:
-                width, height = size.split('*', 1)
-            else:
+            # Gemini 格式：仅分辨率（-2K、-4K）
+            if size.startswith('-'):
+                resolution = size[1:].strip().upper()
+                return resolution in ['1K', '2K', '4K']
+
+            # Gemini 格式：宽高比-分辨率（16:9-2K、1:1-4K）
+            if '-' in size and ':' in size:
+                parts = size.split('-', 1)
+                aspect_part = parts[0].strip()
+                resolution = parts[1].strip().upper()
+
+                # 验证宽高比部分
+                if ':' in aspect_part:
+                    aspect_parts = aspect_part.split(':', 1)
+                    try:
+                        w = int(aspect_parts[0].strip())
+                        h = int(aspect_parts[1].strip())
+                        if w <= 0 or h <= 0:
+                            return False
+                    except ValueError:
+                        return False
+
+                    # 验证分辨率部分
+                    return resolution in ['1K', '2K', '4K']
                 return False
 
-            # 检查是否为数字且在合理范围内
-            w, h = int(width.strip()), int(height.strip())
-            return 64 <= w <= 4096 and 64 <= h <= 4096
+            # Gemini 格式：纯宽高比（16:9、1:1）
+            if ':' in size and 'x' not in size.lower():
+                parts = size.split(':', 1)
+                try:
+                    w = int(parts[0].strip())
+                    h = int(parts[1].strip())
+                    return w > 0 and h > 0
+                except ValueError:
+                    return False
+
+            # 像素格式：1024x1024、512x512
+            if 'x' in size.lower():
+                if 'x' in size:
+                    width, height = size.split('x', 1)
+                elif '*' in size:
+                    width, height = size.split('*', 1)
+                else:
+                    return False
+
+                # 检查是否为数字且在合理范围内
+                w, h = int(width.strip()), int(height.strip())
+                return 64 <= w <= 4096 and 64 <= h <= 4096
+
+            return False
 
         except (ValueError, AttributeError):
             return False
