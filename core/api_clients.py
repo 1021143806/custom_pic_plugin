@@ -73,6 +73,7 @@ class ApiClient:
                         self._make_gemini_request,
                         prompt=prompt,
                         model_config=model_config,
+                        size=size,
                         input_image_base64=input_image_base64
                     )
                 else:  # 默认为openai格式
@@ -526,7 +527,7 @@ class ApiClient:
             logger.error(f"{self.log_prefix} (魔搭) 请求异常: {e!r}", exc_info=True)
             return False, f"请求失败: {str(e)}"
 
-    def _make_gemini_request(self, prompt: str, model_config: Dict[str, Any], input_image_base64: str = None) -> Tuple[bool, str]:
+    def _make_gemini_request(self, prompt: str, model_config: Dict[str, Any], size: str = None, input_image_base64: str = None) -> Tuple[bool, str]:
         """发送Gemini格式的HTTP请求生成图片"""
         try:
             # API配置
@@ -597,7 +598,7 @@ class ApiClient:
             }
 
             # 添加 Gemini 图片尺寸配置
-            image_config = self._build_gemini_image_config(model_name, model_config)
+            image_config = self._build_gemini_image_config(model_name, model_config, size)
             if image_config:
                 request_data["generationConfig"]["imageConfig"] = image_config
                 logger.info(f"{self.log_prefix} (Gemini) 图片配置: {image_config}")
@@ -673,60 +674,155 @@ class ApiClient:
             logger.error(f"{self.log_prefix} (Gemini) 请求异常: {e!r}", exc_info=True)
             return False, f"请求失败: {str(e)}"
 
-    def _build_gemini_image_config(self, model_name: str, model_config: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    def _build_gemini_image_config(self, model_name: str, model_config: Dict[str, Any], llm_size: str = None) -> Optional[Dict[str, str]]:
         """构建 Gemini 图片配置
 
-        支持的 default_size 格式：
-        - "16:9"      → { "aspectRatio": "16:9" }
-        - "16:9-2K"   → { "aspectRatio": "16:9", "imageSize": "2K" }
-        - "1:1-4K"    → { "aspectRatio": "1:1", "imageSize": "4K" }
+        逻辑说明：
+        1. fixed_size_enabled = false: 完全使用 llm_size（LLM分析的尺寸），转换为宽高比
+        2. fixed_size_enabled = true: 检查 default_size 格式
+           - 完整格式（如 "1:1-2K"）: 直接使用 default_size
+           - 分辨率格式（如 "-2K"）: 从 llm_size 提取宽高比并拼接分辨率
+
+        支持的格式：
+        - llm_size: "1024x1024" → 转换为 "1:1"
+        - default_size: "16:9" → { "aspectRatio": "16:9" }
+        - default_size: "16:9-2K" → { "aspectRatio": "16:9", "imageSize": "2K" }
+        - default_size: "-2K" + llm_size: "1024x1024" → { "aspectRatio": "1:1", "imageSize": "2K" }
 
         Args:
             model_name: 模型名称
             model_config: 模型配置
+            llm_size: LLM分析返回的尺寸（像素格式，如 "1024x1024"）
 
         Returns:
             imageConfig 字典，如果不需要配置则返回 None
         """
-        size = model_config.get("default_size", "").strip()
+        fixed_size_enabled = model_config.get("fixed_size_enabled", False)
+        default_size = model_config.get("default_size", "").strip()
 
-        if not size:
-            return None
+        # 像素格式转宽高比的内部函数
+        def convert_pixel_to_aspect(pixel_size: str) -> Optional[str]:
+            """将像素格式（如 1024x1024）转换为宽高比（如 1:1）"""
+            if not pixel_size or 'x' not in pixel_size.lower():
+                return None
+            try:
+                parts = pixel_size.lower().split('x')
+                if len(parts) != 2:
+                    return None
+                width = int(parts[0].strip())
+                height = int(parts[1].strip())
+                if width <= 0 or height <= 0:
+                    return None
+
+                # 计算最大公约数
+                def gcd(a, b):
+                    while b:
+                        a, b = b, a % b
+                    return a
+
+                divisor = gcd(width, height)
+                aspect_w = width // divisor
+                aspect_h = height // divisor
+
+                # Gemini 官方支持的所有宽高比
+                gemini_supported_ratios = {
+                    (1, 1): "1:1", (16, 9): "16:9", (9, 16): "9:16",
+                    (4, 3): "4:3", (3, 4): "3:4", (3, 2): "3:2",
+                    (2, 3): "2:3", (4, 5): "4:5", (5, 4): "5:4",
+                    (21, 9): "21:9"
+                }
+
+                # 如果直接匹配成功，返回
+                if (aspect_w, aspect_h) in gemini_supported_ratios:
+                    return gemini_supported_ratios[(aspect_w, aspect_h)]
+
+                # 如果不在支持列表中，找到最接近的宽高比
+                target_ratio = aspect_w / aspect_h
+                closest_ratio = None
+                min_diff = float('inf')
+
+                for (w, h), ratio_str in gemini_supported_ratios.items():
+                    diff = abs(w / h - target_ratio)
+                    if diff < min_diff:
+                        min_diff = diff
+                        closest_ratio = ratio_str
+
+                logger.warning(
+                    f"{self.log_prefix} (Gemini) 计算出的宽高比 {aspect_w}:{aspect_h} 不在 Gemini 支持列表中，"
+                    f"将使用最接近的比例: {closest_ratio}"
+                )
+                return closest_ratio
+            except (ValueError, ZeroDivisionError):
+                return None
 
         image_config = {}
+        final_aspect_ratio = None
+        final_image_size = None
 
-        # 检查是否包含 imageSize（用 - 分隔）
-        if "-" in size:
-            # 格式：16:9-2K 或 1:1-4K
-            parts = size.split("-", 1)
-            aspect_ratio = parts[0].strip()
-            image_size = parts[1].strip().upper()  # 1K, 2K, 4K
+        # === 逻辑分支 ===
+        if not fixed_size_enabled:
+            # fixed_size_enabled = false: 完全使用 LLM 的 size
+            if llm_size:
+                final_aspect_ratio = convert_pixel_to_aspect(llm_size)
+                if final_aspect_ratio:
+                    logger.info(f"{self.log_prefix} (Gemini) 使用 LLM 尺寸: {llm_size} → {final_aspect_ratio}")
+                else:
+                    logger.warning(f"{self.log_prefix} (Gemini) LLM 尺寸格式无效: {llm_size}，将不设置宽高比")
+            else:
+                logger.info(f"{self.log_prefix} (Gemini) LLM 未返回尺寸，将不设置宽高比")
+        else:
+            # fixed_size_enabled = true: 检查 default_size 格式
+            if not default_size:
+                logger.warning(f"{self.log_prefix} (Gemini) fixed_size_enabled=true 但 default_size 为空")
+                return None
 
-            image_config["aspectRatio"] = aspect_ratio
+            # 检查 default_size 是否以 "-" 开头（仅分辨率，如 "-2K"）
+            if default_size.startswith("-"):
+                # 需要从 LLM size 提取宽高比
+                resolution = default_size[1:].strip().upper()  # 提取 "2K"
+                if llm_size:
+                    final_aspect_ratio = convert_pixel_to_aspect(llm_size)
+                    if final_aspect_ratio:
+                        final_image_size = resolution
+                        logger.info(f"{self.log_prefix} (Gemini) 使用混合模式: LLM宽高比 {final_aspect_ratio} + 配置分辨率 {resolution}")
+                    else:
+                        logger.warning(f"{self.log_prefix} (Gemini) LLM 尺寸无效: {llm_size}，无法提取宽高比")
+                        return None
+                else:
+                    logger.warning(f"{self.log_prefix} (Gemini) default_size='{default_size}' 需要 LLM 提供宽高比，但 LLM 未返回尺寸")
+                    return None
+            elif "-" in default_size:
+                # 完整格式（如 "16:9-2K"）
+                parts = default_size.split("-", 1)
+                final_aspect_ratio = parts[0].strip()
+                final_image_size = parts[1].strip().upper()
+                logger.info(f"{self.log_prefix} (Gemini) 使用完整配置: {default_size}")
+            elif ":" in default_size:
+                # 纯宽高比（如 "16:9"）
+                final_aspect_ratio = default_size
+                logger.info(f"{self.log_prefix} (Gemini) 使用配置宽高比: {default_size}")
+            elif "x" in default_size.lower():
+                # 像素格式（如 "1024x1024"），转换为宽高比
+                final_aspect_ratio = convert_pixel_to_aspect(default_size)
+                if not final_aspect_ratio:
+                    logger.warning(f"{self.log_prefix} (Gemini) 配置尺寸格式无效: {default_size}，使用默认 1:1")
+                    final_aspect_ratio = "1:1"
+            else:
+                logger.warning(f"{self.log_prefix} (Gemini) 无法识别的 default_size 格式: '{default_size}'，使用默认 1:1")
+                final_aspect_ratio = "1:1"
 
+        # === 构建最终配置 ===
+        if final_aspect_ratio:
+            image_config["aspectRatio"] = final_aspect_ratio
+
+        if final_image_size:
             # 仅 Gemini 3 Pro 支持 imageSize
             if "gemini-3" in model_name.lower():
-                if image_size in ["1K", "2K", "4K"]:
-                    image_config["imageSize"] = image_size
+                if final_image_size in ["1K", "2K", "4K"]:
+                    image_config["imageSize"] = final_image_size
                 else:
-                    logger.warning(f"{self.log_prefix} (Gemini) 无效的 imageSize: {image_size}，仅支持 1K/2K/4K")
+                    logger.warning(f"{self.log_prefix} (Gemini) 无效的 imageSize: {final_image_size}，仅支持 1K/2K/4K")
             else:
                 logger.warning(f"{self.log_prefix} (Gemini) imageSize 仅支持 Gemini 3 Pro，当前模型: {model_name}")
-        else:
-            # 格式：16:9（纯宽高比）
-            # 验证是否是有效的宽高比格式（包含冒号）
-            if ":" in size:
-                image_config["aspectRatio"] = size
-            elif "x" in size.lower():
-                # 检测到传统格式（如 1024x1024），给出警告
-                logger.warning(
-                    f"{self.log_prefix} (Gemini) 检测到传统尺寸格式 '{size}'，Gemini 需要宽高比格式（如 16:9）。"
-                    f"将使用默认值 1:1"
-                )
-                image_config["aspectRatio"] = "1:1"
-            else:
-                # 无法识别的格式
-                logger.warning(f"{self.log_prefix} (Gemini) 无法识别的尺寸格式 '{size}'，使用默认值 1:1")
-                image_config["aspectRatio"] = "1:1"
 
         return image_config if image_config else None
