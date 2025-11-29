@@ -263,8 +263,13 @@ class Custom_Pic_Action(BaseAction):
         model_name = model_config.get("model", "default-model")
         api_format = model_config.get("format", "openai")
 
-        # 使用统一的尺寸处理逻辑
-        image_size, llm_original_size = get_image_size(model_config, size, self.log_prefix)
+        # 保留原始的 LLM 尺寸（用于 Gemini）
+        llm_original_size = size if size else None
+
+        if enable_default_size:
+            size = None
+            logger.info(f"{self.log_prefix} 使用自定义固定大小")
+        image_size = size or model_config.get("default_size", "1024x1024")
 
         # 验证图片尺寸格式
         if not self._validate_image_size(image_size):
@@ -295,17 +300,13 @@ class Custom_Pic_Action(BaseAction):
             )
 
         try:
-            # 对于 Gemini/Zai 格式，将原始 LLM 尺寸添加到 model_config 中
-            if api_format in ("gemini", "zai") and llm_original_size:
+            # 对于 Gemini 格式，将原始 LLM 尺寸添加到 model_config 中
+            if api_format == "gemini" and llm_original_size:
                 model_config = dict(model_config)  # 创建副本避免修改原配置
                 model_config["_llm_original_size"] = llm_original_size
 
-            # 获取重试次数配置
-            max_retries = self.get_config("components.max_retries", 2)
-
-            # 获取对应格式的API客户端并调用
-            api_client = self._get_api_client(api_format)
-            success, result = await api_client.generate_image(
+            # 调用API客户端生成图片
+            success, result = await self.api_client.generate_image(
                 prompt=description,
                 model_config=model_config,
                 size=image_size,
@@ -388,8 +389,71 @@ class Custom_Pic_Action(BaseAction):
         return model_config or {}
 
     def _validate_image_size(self, size: str) -> bool:
-        """验证图片尺寸格式是否正确（委托给size_utils）"""
-        return validate_image_size(size)
+        """验证图片尺寸格式是否正确
+
+        支持的格式：
+        1. 像素格式（其他 API）：1024x1024、512x512
+        2. Gemini 宽高比：16:9、1:1、4:3
+        3. Gemini 完整格式：16:9-2K、1:1-4K
+        4. Gemini 分辨率：-2K、-4K
+        """
+        if not size or not isinstance(size, str):
+            return False
+
+        try:
+            # Gemini 格式：仅分辨率（-2K、-4K）
+            if size.startswith('-'):
+                resolution = size[1:].strip().upper()
+                return resolution in ['1K', '2K', '4K']
+
+            # Gemini 格式：宽高比-分辨率（16:9-2K、1:1-4K）
+            if '-' in size and ':' in size:
+                parts = size.split('-', 1)
+                aspect_part = parts[0].strip()
+                resolution = parts[1].strip().upper()
+
+                # 验证宽高比部分
+                if ':' in aspect_part:
+                    aspect_parts = aspect_part.split(':', 1)
+                    try:
+                        w = int(aspect_parts[0].strip())
+                        h = int(aspect_parts[1].strip())
+                        if w <= 0 or h <= 0:
+                            return False
+                    except ValueError:
+                        return False
+
+                    # 验证分辨率部分
+                    return resolution in ['1K', '2K', '4K']
+                return False
+
+            # Gemini 格式：纯宽高比（16:9、1:1）
+            if ':' in size and 'x' not in size.lower():
+                parts = size.split(':', 1)
+                try:
+                    w = int(parts[0].strip())
+                    h = int(parts[1].strip())
+                    return w > 0 and h > 0
+                except ValueError:
+                    return False
+
+            # 像素格式：1024x1024、512x512
+            if 'x' in size.lower():
+                if 'x' in size:
+                    width, height = size.split('x', 1)
+                elif '*' in size:
+                    width, height = size.split('*', 1)
+                else:
+                    return False
+
+                # 检查是否为数字且在合理范围内
+                w, h = int(width.strip()), int(height.strip())
+                return 64 <= w <= 4096 and 64 <= h <= 4096
+
+            return False
+
+        except (ValueError, AttributeError):
+            return False
 
     def _process_selfie_prompt(self, description: str, selfie_style: str, free_hand_action: str, model_id: str) -> str:
         """处理自拍模式的提示词生成
