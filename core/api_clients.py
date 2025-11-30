@@ -213,6 +213,7 @@ class ApiClient:
             "prompt": prompt_add,
             "negative_prompt": negative_prompt,
             "size": size,
+            "n": 1,
             "seed": seed,
             "api-key": generate_api_key
         }
@@ -240,6 +241,33 @@ class ApiClient:
         else: #默认魔搭等其他
             payload_dict["guidance_scale"] = guidance_scale
             payload_dict["num_inference_steps"] = num_inference_steps
+
+        # 平台兼容性处理
+        is_siliconflow = "siliconflow" in base_url.lower() or "api.siliconflow.cn" in base_url.lower()
+        is_openai_official = "api.openai.com" in base_url.lower()
+        is_grok = "api.x.ai" in base_url.lower()
+
+        if is_siliconflow:
+            # 硅基流动：使用 image_size 代替 size，batch_size 代替 n
+            if "size" in payload_dict:
+                payload_dict["image_size"] = payload_dict.pop("size")
+            if "n" in payload_dict:
+                payload_dict["batch_size"] = payload_dict.pop("n")
+            logger.debug(f"{self.log_prefix} (OpenAI) 检测到硅基流动平台，使用 image_size/batch_size 参数")
+
+        elif is_openai_official:
+            # OpenAI官方：只保留标准参数（model, prompt, size, n, quality, style, response_format）
+            standard_params = ["model", "prompt", "size", "n", "quality", "style", "response_format"]
+            if input_image_base64:
+                standard_params.extend(["image", "strength"])
+            payload_dict = {k: v for k, v in payload_dict.items() if k in standard_params}
+            logger.debug(f"{self.log_prefix} (OpenAI) 检测到OpenAI官方平台，仅使用标准参数")
+
+        elif is_grok:
+            # Grok：只保留 model, prompt, n, response_format
+            supported = ["model", "prompt", "n", "response_format"]
+            payload_dict = {k: v for k, v in payload_dict.items() if k in supported}
+            logger.debug(f"{self.log_prefix} (OpenAI) 检测到Grok平台，仅保留支持的参数")
 
         data = json.dumps(payload_dict).encode("utf-8")
         headers = {
