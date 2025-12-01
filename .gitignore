@@ -4,6 +4,7 @@
 # 忽略特定目录
 old/
 __pycache__/
+.claude
 
 # 忽略特定文件
 config.toml

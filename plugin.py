@@ -28,7 +28,9 @@ class CustomPicPlugin(BasePlugin):
         "models": "多模型配置，每个模型都有独立的参数设置",
         "cache": "结果缓存配置",
         "components": "组件启用配置",
-        "logging": "日志配置"
+        "logging": "日志配置",
+        "selfie": "自拍模式配置",
+        "auto_recall": "自动撤回配置"
     }
 
     # 步骤2: 使用ConfigField定义详细的配置Schema
@@ -87,6 +89,40 @@ class CustomPicPlugin(BasePlugin):
                 description="风格中文别名，格式: 英文名 = \"中文名\"。支持多别名，用逗号分隔"
             )
         },
+        "selfie": {
+            "enabled": ConfigField(
+                type=bool,
+                default=True,
+                description="是否启用自拍模式功能"
+            ),
+            "reference_image_path": ConfigField(
+                type=str,
+                default="",
+                description="自拍参考图片路径（相对于插件目录或绝对路径）。优先使用此配置，留空则使用reference_image_base64"
+            ),
+            "reference_image_base64": ConfigField(
+                type=str,
+                default="",
+                description="自拍参考图片的base64编码。当reference_image_path为空时使用此配置"
+            ),
+            "prompt_prefix": ConfigField(
+                type=str,
+                default="",
+                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform, 1girl'"
+            ),
+            "use_reference_for_all": ConfigField(
+                type=bool,
+                default=False,
+                description="是否在所有自拍请求中使用参考图片进行图生图。开启后自拍将基于参考图生成"
+            )
+        },
+        "auto_recall": {
+            "enabled": ConfigField(
+                type=bool,
+                default=False,
+                description="是否启用自动撤回功能（总开关）。关闭后所有模型的撤回都不生效"
+            )
+        },
         "models": {},
         # 基础模型配置
         "models.model1": {
@@ -106,8 +142,8 @@ class CustomPicPlugin(BasePlugin):
             "format": ConfigField(
                 type=str,
                 default="openai",
-                description="API格式。openai=通用格式，doubao=豆包专用，gemini=Gemini专用，modelscope=魔搭专用",
-                choices=["openai", "gemini", "doubao", "modelscope"]
+                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，comfyui=ComfyUI，mengyuai=梦羽AI",
+                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"]
             ),
             "model": ConfigField(
                 type=str,
@@ -139,10 +175,10 @@ class CustomPicPlugin(BasePlugin):
             ),
             "support_img2img": ConfigField(type=bool, default=True, description="是否支持图生图。不支持时自动降级为文生图"),
             "num_inference_steps": ConfigField(type=int, default=20, description="推理步数，影响质量和速度。推荐20-50"),
-            "selfie_prompt_add": ConfigField(
-                type=str,
-                default="",
-                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform'"
+            "auto_recall_delay": ConfigField(
+                type=int,
+                default=0,
+                description="自动撤回延时（秒）。大于0时启用撤回，0或不填则不撤回"
             ),
         }
     }
