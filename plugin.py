@@ -32,123 +32,17 @@ class CustomPicPlugin(BasePlugin):
 
     # 配置节元数据
     config_section_descriptions = {
-        "plugin": ConfigSection(
-            title="插件启用配置",
-            icon="info",
-            order=1
-        ),
-        "generation": ConfigSection(
-            title="图片生成默认配置",
-            icon="image",
-            order=2
-        ),
-        "components": ConfigSection(
-            title="组件启用配置",
-            icon="puzzle-piece",
-            order=3
-        ),
-        "proxy": ConfigSection(
-            title="代理设置",
-            icon="globe",
-            order=4
-        ),
-        "cache": ConfigSection(
-            title="结果缓存配置",
-            icon="database",
-            order=5
-        ),
-        "selfie": ConfigSection(
-            title="自拍模式配置",
-            icon="camera",
-            order=6
-        ),
-        "auto_recall": ConfigSection(
-            title="自动撤回配置",
-            icon="trash",
-            order=7
-        ),
-        "prompt_optimizer": ConfigSection(
-            title="提示词优化器",
-            description="使用 MaiBot 主 LLM 将用户描述优化为专业绘画提示词",
-            icon="wand-2",
-            order=8
-        ),
-        "styles": ConfigSection(
-            title="风格定义",
-            description="预设风格的提示词。添加更多风格请直接编辑 config.toml，格式：风格英文名 = \"提示词\"",
-            icon="palette",
-            order=9
-        ),
-        "style_aliases": ConfigSection(
-            title="风格别名",
-            description="风格的中文别名映射。添加更多别名请直接编辑 config.toml",
-            icon="tag",
-            order=10
-        ),
-        "logging": ConfigSection(
-            title="日志配置",
-            icon="file-text",
-            collapsed=True,
-            order=11
-        ),
-        "models": ConfigSection(
-            title="多模型配置",
-            description="添加更多模型请直接编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
-            icon="cpu",
-            order=12
-        ),
-        "models.model1": ConfigSection(
-            title="模型1配置",
-            icon="box",
-            order=13
-        ),
+        "plugin": "插件启用配置",
+        "generation": "图片生成默认配置",
+        "models": "多模型配置，每个模型都有独立的参数设置",
+        "cache": "结果缓存配置",
+        "components": "组件启用配置",
+        "logging": "日志配置",
+        "selfie": "自拍模式配置",
+        "auto_recall": "自动撤回配置"
     }
 
-    # 自定义布局：标签页
-    config_layout = ConfigLayout(
-        type="tabs",
-        tabs=[
-            ConfigTab(
-                id="basic",
-                title="基础设置",
-                sections=["plugin", "generation", "components"],
-                icon="settings"
-            ),
-            ConfigTab(
-                id="network",
-                title="网络配置",
-                sections=["proxy", "cache"],
-                icon="wifi"
-            ),
-            ConfigTab(
-                id="features",
-                title="功能配置",
-                sections=["selfie", "auto_recall", "prompt_optimizer"],
-                icon="zap"
-            ),
-            ConfigTab(
-                id="styles",
-                title="风格管理",
-                sections=["styles", "style_aliases"],
-                icon="palette"
-            ),
-            ConfigTab(
-                id="models",
-                title="模型管理",
-                sections=["models", "models.model1"],
-                icon="cpu"
-            ),
-            ConfigTab(
-                id="advanced",
-                title="高级",
-                sections=["logging"],
-                icon="terminal",
-                badge="Dev"
-            ),
-        ]
-    )
-
-    # 配置Schema
+    # 步骤2: 使用ConfigField定义详细的配置Schema
     config_schema = {
         "plugin": {
             "name": ConfigField(
@@ -381,16 +275,42 @@ class CustomPicPlugin(BasePlugin):
                 order=2
             )
         },
-        "models": {
-            "hint": ConfigField(
+        "selfie": {
+            "enabled": ConfigField(
+                type=bool,
+                default=True,
+                description="是否启用自拍模式功能"
+            ),
+            "reference_image_path": ConfigField(
                 type=str,
-                default="添加更多模型：编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
-                description="配置说明",
-                disabled=True,
-                order=1
+                default="",
+                description="自拍参考图片路径（相对于插件目录或绝对路径）。优先使用此配置，留空则使用reference_image_base64"
+            ),
+            "reference_image_base64": ConfigField(
+                type=str,
+                default="",
+                description="自拍参考图片的base64编码。当reference_image_path为空时使用此配置"
+            ),
+            "prompt_prefix": ConfigField(
+                type=str,
+                default="",
+                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform, 1girl'"
+            ),
+            "use_reference_for_all": ConfigField(
+                type=bool,
+                default=False,
+                description="是否在所有自拍请求中使用参考图片进行图生图。开启后自拍将基于参考图生成"
             )
         },
-        # 基础模型配置模板
+        "auto_recall": {
+            "enabled": ConfigField(
+                type=bool,
+                default=False,
+                description="是否启用自动撤回功能（总开关）。关闭后所有模型的撤回都不生效"
+            )
+        },
+        "models": {},
+        # 基础模型配置
         "models.model1": {
             "name": ConfigField(
                 type=str,
@@ -418,9 +338,8 @@ class CustomPicPlugin(BasePlugin):
             "format": ConfigField(
                 type=str,
                 default="openai",
-                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，mengyuai=梦羽AI，zai=Zai(Gemini转发)",
-                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "mengyuai", "zai"],
-                order=4
+                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，comfyui=ComfyUI，mengyuai=梦羽AI",
+                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"]
             ),
             "model": ConfigField(
                 type=str,
@@ -489,10 +408,12 @@ class CustomPicPlugin(BasePlugin):
                 rows=2,
                 order=13
             ),
-            "artist": ConfigField(
-                type=str,
-                default="",
-                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform'"
+            "support_img2img": ConfigField(type=bool, default=True, description="是否支持图生图。不支持时自动降级为文生图"),
+            "num_inference_steps": ConfigField(type=int, default=20, description="推理步数，影响质量和速度。推荐20-50"),
+            "auto_recall_delay": ConfigField(
+                type=int,
+                default=0,
+                description="自动撤回延时（秒）。大于0时启用撤回，0或不填则不撤回"
             ),
         }
     }

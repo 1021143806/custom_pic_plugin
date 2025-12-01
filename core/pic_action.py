@@ -2,12 +2,15 @@ import asyncio
 import traceback
 import base64
 import os
+import base64
+import os
 from typing import List, Tuple, Type, Optional, Dict, Any
 
 from src.plugin_system.base.base_action import BaseAction
 from src.plugin_system.base.component_types import ActionActivationType, ChatMode
 from src.common.logger import get_logger
 
+from .api_clients import get_client_class
 from .api_clients import get_client_class
 from .image_utils import ImageProcessor
 from .cache_manager import CacheManager
@@ -191,17 +194,15 @@ class Custom_Pic_Action(BaseAction):
             description = self._process_selfie_prompt(description, selfie_style, free_hand_action, model_id)
             logger.info(f"{self.log_prefix} 自拍模式处理后的提示词: {description[:100]}...")
 
-            # 检查是否配置了参考图片
-            reference_image = self._get_selfie_reference_image()
-            if reference_image:
-                # 检查模型是否支持图生图
-                model_config = self._get_model_config(model_id)
-                if model_config and model_config.get("support_img2img", True):
+            # 检查是否需要使用参考图片进行图生图
+            use_reference = self.get_config("selfie.use_reference_for_all", False)
+            if use_reference:
+                reference_image = self._get_selfie_reference_image()
+                if reference_image:
                     logger.info(f"{self.log_prefix} 使用自拍参考图片进行图生图")
                     return await self._execute_unified_generation(description, model_id, size, strength or 0.6, reference_image)
                 else:
-                    logger.warning(f"{self.log_prefix} 模型 {model_id} 不支持图生图，自拍回退为文生图模式")
-            # 无参考图或模型不支持，继续使用文生图
+                    logger.warning(f"{self.log_prefix} 未找到自拍参考图片，使用文生图模式")
 
         # **智能检测：判断是文生图还是图生图**
         input_image_base64 = await self.image_processor.get_recent_image()
@@ -295,8 +296,12 @@ class Custom_Pic_Action(BaseAction):
                 model_config = dict(model_config)  # 创建副本避免修改原配置
                 model_config["_llm_original_size"] = llm_original_size
 
-            # 调用API客户端生成图片
-            success, result = await self.api_client.generate_image(
+            # 获取重试次数配置
+            max_retries = self.get_config("components.max_retries", 2)
+
+            # 获取对应格式的API客户端并调用
+            api_client = self._get_api_client(api_format)
+            success, result = await api_client.generate_image(
                 prompt=description,
                 model_config=model_config,
                 size=image_size,
@@ -379,71 +384,8 @@ class Custom_Pic_Action(BaseAction):
         return model_config or {}
 
     def _validate_image_size(self, size: str) -> bool:
-        """验证图片尺寸格式是否正确
-
-        支持的格式：
-        1. 像素格式（其他 API）：1024x1024、512x512
-        2. Gemini 宽高比：16:9、1:1、4:3
-        3. Gemini 完整格式：16:9-2K、1:1-4K
-        4. Gemini 分辨率：-2K、-4K
-        """
-        if not size or not isinstance(size, str):
-            return False
-
-        try:
-            # Gemini 格式：仅分辨率（-2K、-4K）
-            if size.startswith('-'):
-                resolution = size[1:].strip().upper()
-                return resolution in ['1K', '2K', '4K']
-
-            # Gemini 格式：宽高比-分辨率（16:9-2K、1:1-4K）
-            if '-' in size and ':' in size:
-                parts = size.split('-', 1)
-                aspect_part = parts[0].strip()
-                resolution = parts[1].strip().upper()
-
-                # 验证宽高比部分
-                if ':' in aspect_part:
-                    aspect_parts = aspect_part.split(':', 1)
-                    try:
-                        w = int(aspect_parts[0].strip())
-                        h = int(aspect_parts[1].strip())
-                        if w <= 0 or h <= 0:
-                            return False
-                    except ValueError:
-                        return False
-
-                    # 验证分辨率部分
-                    return resolution in ['1K', '2K', '4K']
-                return False
-
-            # Gemini 格式：纯宽高比（16:9、1:1）
-            if ':' in size and 'x' not in size.lower():
-                parts = size.split(':', 1)
-                try:
-                    w = int(parts[0].strip())
-                    h = int(parts[1].strip())
-                    return w > 0 and h > 0
-                except ValueError:
-                    return False
-
-            # 像素格式：1024x1024、512x512
-            if 'x' in size.lower():
-                if 'x' in size:
-                    width, height = size.split('x', 1)
-                elif '*' in size:
-                    width, height = size.split('*', 1)
-                else:
-                    return False
-
-                # 检查是否为数字且在合理范围内
-                w, h = int(width.strip()), int(height.strip())
-                return 64 <= w <= 4096 and 64 <= h <= 4096
-
-            return False
-
-        except (ValueError, AttributeError):
-            return False
+        """验证图片尺寸格式是否正确（委托给size_utils）"""
+        return validate_image_size(size)
 
     def _process_selfie_prompt(self, description: str, selfie_style: str, free_hand_action: str, model_id: str) -> str:
         """处理自拍模式的提示词生成
@@ -574,136 +516,120 @@ class Custom_Pic_Action(BaseAction):
         logger.info(f"{self.log_prefix} 自拍模式最终提示词: {final_prompt[:200]}...")
         return final_prompt
 
-    def _extract_description_from_message(self) -> str:
-        """从用户消息中提取图片描述
-        
-        Returns:
-            str: 提取的图片描述，如果无法提取则返回空字符串
-        """
-        if not self.action_message:
-            return ""
-            
-        # 获取消息文本
-        message_text = (self.action_message.processed_plain_text or
-                       self.action_message.display_message or
-                       self.action_message.raw_message or "").strip()
-        
-        if not message_text:
-            return ""
-            
-        import re
-        
-        # 移除常见的画图相关前缀
-        patterns_to_remove = [
-            r'^画',           # "画"
-            r'^绘制',         # "绘制"
-            r'^生成图片',     # "生成图片"
-            r'^画图',         # "画图"
-            r'^帮我画',       # "帮我画"
-            r'^请画',         # "请画"
-            r'^能不能画',     # "能不能画"
-            r'^可以画',       # "可以画"
-            r'^画一个',       # "画一个"
-            r'^画一只',       # "画一只"
-            r'^画张',         # "画张"
-            r'^画幅',         # "画幅"
-            r'^图[：:]',      # "图："或"图:"
-            r'^生成图片[：:]', # "生成图片："或"生成图片:"
-            r'^[：:]',        # 单独的冒号
-        ]
-        
-        cleaned_text = message_text
-        for pattern in patterns_to_remove:
-            cleaned_text = re.sub(pattern, '', cleaned_text, flags=re.IGNORECASE)
-        
-        # 移除常见的后缀
-        suffix_patterns = [
-            r'图片$',         # "图片"
-            r'图$',           # "图"
-            r'一下$',         # "一下"
-            r'呗$',           # "呗"
-            r'吧$',           # "吧"
-        ]
-        
-        for pattern in suffix_patterns:
-            cleaned_text = re.sub(pattern, '', cleaned_text, flags=re.IGNORECASE)
-        
-        # 清理空白字符
-        cleaned_text = cleaned_text.strip()
-        
-        # 如果清理后为空，返回原消息（可能是简单的描述）
-        if not cleaned_text:
-            cleaned_text = message_text
-            
-        # 限制长度，避免过长的描述
-        if len(cleaned_text) > 100:
-            cleaned_text = cleaned_text[:100]
-            
-        return cleaned_text
+    def _get_selfie_reference_image(self) -> Optional[str]:
+        """获取自拍参考图片的base64编码
 
-    def _convert_to_english_prompt(self, chinese_description: str) -> str:
-        """将中文描述转换为英文绘画提示词
-        
-        Args:
-            chinese_description: 中文描述文本
-            
+        优先使用reference_image_path，如果不存在则使用reference_image_base64
+
         Returns:
-            str: 英文绘画提示词
+            图片的base64编码，如果不存在则返回None
         """
-        if not chinese_description:
-            return chinese_description
-            
-        # 如果已经是英文，直接返回
-        if not any('\u4e00' <= char <= '\u9fff' for char in chinese_description):
-            return chinese_description
-            
-        # 基础翻译映射
-        translation_map = {
-            # 动物
-            '猫': 'cat', '小猫': 'cute cat', '猫咪': 'cat', '狗': 'dog', '小狗': 'puppy',
-            '兔子': 'rabbit', '鸟': 'bird', '鱼': 'fish', '蝴蝶': 'butterfly',
-            
-            # 人物
-            '女孩': 'girl', '男孩': 'boy', '女人': 'woman', '男人': 'man',
-            '孩子': 'child', '宝宝': 'baby',
-            
-            # 场景
-            '海边': 'beach', '海边': 'ocean', '森林': 'forest', '花园': 'garden',
-            '房间': 'room', '天空': 'sky', '月亮': 'moon', '太阳': 'sun',
-            
-            # 动作
-            '睡觉': 'sleeping', '坐着': 'sitting', '站着': 'standing', '走路': 'walking',
-            '跑步': 'running', '飞翔': 'flying', '游泳': 'swimming',
-            
-            # 形容词
-            '可爱': 'cute', '漂亮': 'beautiful', '帅气': 'handsome', '大': 'big',
-            '小': 'small', '红色': 'red', '蓝色': 'blue', '绿色': 'green',
-            '黄色': 'yellow', '黑色': 'black', '白色': 'white',
-            
-            # 其他
-            '一只': 'a', '一个': 'a', '在': 'in', '上': 'on', '下': 'under',
-        }
-        
-        # 简单的词汇替换
-        words = chinese_description
-        for chinese, english in translation_map.items():
-            words = words.replace(chinese, english)
-            
-        # 清理多余空格并添加适当的分隔
-        words = words.replace('  ', ' ').strip()
-        # 确保英文单词之间有适当空格
-        words = words.replace('a ', 'a ').replace(' in ', ' in ').replace(' on ', ' on ').replace(' under ', ' under ')
-            
-        # 如果还有中文字符，使用基础处理
-        if any('\u4e00' <= char <= '\u9fff' for char in words):
-            # 移除剩余的中文字符，保留英文和数字
-            import re
-            words = re.sub(r'[^\w\s,]', ' ', words)  # 移除特殊字符
-            words = re.sub(r'[\u4e00-\u9fff]', ' ', words)  # 移除中文字符
-            words = re.sub(r'\s+', ' ', words).strip()  # 清理多余空格
-            
-        # 添加基础画质标签
-        if words and not any(tag in words.lower() for tag in ['quality', 'masterpiece', 'best']):
-            words += ", masterpiece, best quality, high resolution"
-            
-        return words.strip()
+        # 首先尝试从文件路径加载
+        image_path = self.get_config("selfie.reference_image_path", "").strip()
+        if image_path:
+            try:
+                # 处理相对路径（相对于插件目录）
+                if not os.path.isabs(image_path):
+                    # 获取插件目录
+                    plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    image_path = os.path.join(plugin_dir, image_path)
+
+                if os.path.exists(image_path):
+                    with open(image_path, 'rb') as f:
+                        image_data = f.read()
+                    image_base64 = base64.b64encode(image_data).decode('utf-8')
+                    logger.info(f"{self.log_prefix} 从文件加载自拍参考图片: {image_path}")
+                    return image_base64
+                else:
+                    logger.warning(f"{self.log_prefix} 自拍参考图片文件不存在: {image_path}")
+            except Exception as e:
+                logger.error(f"{self.log_prefix} 加载自拍参考图片失败: {e}")
+
+        # 如果文件路径不可用，尝试使用base64配置
+        image_base64 = self.get_config("selfie.reference_image_base64", "").strip()
+        if image_base64:
+            logger.info(f"{self.log_prefix} 使用配置中的base64自拍参考图片")
+            return image_base64
+
+        return None
+
+    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None):
+        """安排最近发送消息的自动撤回
+
+        通过查询数据库获取最近发送的消息ID，然后安排撤回任务
+
+        Args:
+            model_config: 当前使用的模型配置，用于检查撤回延时设置
+        """
+        # 检查全局开关
+        global_enabled = self.get_config("auto_recall.enabled", False)
+        if not global_enabled:
+            return
+
+        # 检查模型的撤回延时，大于0才启用
+        if not model_config:
+            return
+
+        delay_seconds = model_config.get("auto_recall_delay", 0)
+        if delay_seconds <= 0:
+            return
+
+        # 创建异步任务
+        async def recall_task():
+            try:
+                # 等待一小段时间让消息存储和 echo 回调完成
+                await asyncio.sleep(2)
+
+                # 查询最近发送的消息获取消息ID
+                import time as time_module
+                from src.plugin_system.apis import message_api
+                from src.config.config import global_config
+
+                current_time = time_module.time()
+                # 查询最近10秒内本聊天中Bot发送的消息
+                messages = message_api.get_messages_by_time_in_chat(
+                    chat_id=self.chat_id,
+                    start_time=current_time - 10,
+                    end_time=current_time + 1,
+                    limit=5,
+                    limit_mode="latest"
+                )
+
+                # 找到Bot发送的图片消息
+                bot_id = str(global_config.bot.qq_account)
+                target_message_id = None
+
+                for msg in messages:
+                    if str(msg.user_info.user_id) == bot_id:
+                        # 找到Bot发送的最新消息
+                        target_message_id = msg.message_id
+                        break
+
+                if not target_message_id:
+                    logger.warning(f"{self.log_prefix} 未找到要撤回的消息ID")
+                    return
+
+                logger.info(f"{self.log_prefix} 安排消息自动撤回，延时: {delay_seconds}秒，消息ID: {target_message_id}")
+
+                # 等待指定时间后撤回
+                await asyncio.sleep(delay_seconds)
+
+                # 使用 send_command 发送撤回命令
+                success = await self.send_command(
+                    command_name="delete_msg",
+                    args={"message_id": target_message_id},
+                    storage_message=False
+                )
+
+                if success:
+                    logger.info(f"{self.log_prefix} 消息自动撤回成功，消息ID: {target_message_id}")
+                else:
+                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}")
+
+            except asyncio.CancelledError:
+                logger.debug(f"{self.log_prefix} 自动撤回任务被取消")
+            except Exception as e:
+                logger.error(f"{self.log_prefix} 自动撤回失败: {e}")
+
+        # 启动后台任务
+        asyncio.create_task(recall_task())

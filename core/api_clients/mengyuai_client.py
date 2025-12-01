@@ -20,8 +20,7 @@ class MengyuaiClient(BaseApiClient):
     # 模型索引映射
     MODEL_INDEX = {
         "default": 0,
-        "qwen_image_edit": 16,  # Qwen Image Edit版模型，用于图生图
-        "qwen_image_edit_2": 17,  # Qwen Image Edit版(服务器2)
+        "qwen_image_edit": 9,  # Qwen Image Edit版模型，用于图生图
     }
 
     def _make_request(
@@ -57,7 +56,7 @@ class MengyuaiClient(BaseApiClient):
             width, height = self._parse_size(size, model_config)
 
             # 获取模型索引
-            model_index = int(model_config.get("model", 0))
+            model_index = model_config.get("model_index", 0)
 
             # 构建请求数据
             request_data = {
@@ -67,8 +66,8 @@ class MengyuaiClient(BaseApiClient):
 
             # 如果有输入图片，使用Qwen Image Edit模型
             if input_image_base64:
-                # 使用图生图模型 (默认 model_index=16 是 Qwen Image Edit版)
-                request_data["model_index"] = model_config.get("img2img_model_index", 16)
+                # 使用图生图模型
+                request_data["model_index"] = model_config.get("img2img_model_index", 9)
 
                 # 需要提供图片URL，这里我们需要先将base64转为可访问的URL
                 # 梦羽AI要求image_source是可访问的URL
@@ -93,14 +92,13 @@ class MengyuaiClient(BaseApiClient):
                 request_data["negative_prompt"] = negative_prompt
                 request_data["width"] = width
                 request_data["height"] = height
-                request_data["steps"] = model_config.get("num_inference_steps", 20)
-                request_data["cfg"] = model_config.get("guidance_scale", 7.0)
+                request_data["steps"] = model_config.get("steps", 20)
+                request_data["cfg"] = model_config.get("cfg", 7.0)
                 request_data["seed"] = model_config.get("seed", -1)
 
             endpoint = f"{base_url}/api/v1/generate_image"
 
             logger.info(f"{self.log_prefix} (梦羽AI) 发起图片请求: model_index={request_data.get('model_index')}")
-            logger.debug(f"{self.log_prefix} (梦羽AI) 完整请求数据: {request_data}")
 
             # 获取代理配置
             proxy_config = self._get_proxy_config()
@@ -129,65 +127,40 @@ class MengyuaiClient(BaseApiClient):
             # 解析响应
             try:
                 result = response.json()
-                logger.debug(f"{self.log_prefix} (梦羽AI) 响应JSON: {result}")
 
-                # 检查是否成功 - 梦羽AI可能没有success字段，直接返回图片URL
-                # 尝试多种可能的响应格式
-                image_url = None
-                image_base64 = None
+                # 检查是否成功
+                if result.get("success") or result.get("code") == 0:
+                    # 获取图片数据
+                    image_url = result.get("url") or result.get("data", {}).get("url")
+                    image_base64 = result.get("image") or result.get("data", {}).get("image")
 
-                # 格式1: {"url": "..."} 或 {"image_url": "..."}
-                image_url = result.get("url") or result.get("image_url") or result.get("output")
+                    if image_base64:
+                        logger.info(f"{self.log_prefix} (梦羽AI) 图片生成成功 (base64)")
+                        return True, image_base64
 
-                # 格式2: {"data": {"url": "..."}} 或 {"data": {"image": "..."}}
-                if not image_url:
-                    data = result.get("data", {})
-                    if isinstance(data, dict):
-                        image_url = data.get("url") or data.get("image_url") or data.get("output")
-                        image_base64 = data.get("image") or data.get("base64")
+                    if image_url:
+                        # 下载图片
+                        image_data = self._download_image(image_url, proxy_config)
+                        if image_data:
+                            logger.info(f"{self.log_prefix} (梦羽AI) 图片生成成功")
+                            return True, image_data
+                        else:
+                            return False, "图片下载失败"
 
-                # 格式3: {"image": "base64..."} 或 {"base64": "..."}
-                if not image_base64:
-                    image_base64 = result.get("image") or result.get("base64")
+                    # 尝试直接返回响应内容（可能是二进制图片）
+                    content_type = response.headers.get('Content-Type', '')
+                    if 'image' in content_type:
+                        image_base64 = base64.b64encode(response.content).decode('utf-8')
+                        logger.info(f"{self.log_prefix} (梦羽AI) 图片生成成功 (binary)")
+                        return True, image_base64
 
-                # 格式4: {"images": ["url1", ...]} 或 {"images": [{"url": "..."}]}
-                if not image_url and not image_base64:
-                    images = result.get("images", [])
-                    if images:
-                        if isinstance(images[0], str):
-                            image_url = images[0]
-                        elif isinstance(images[0], dict):
-                            image_url = images[0].get("url") or images[0].get("image_url")
+                    logger.error(f"{self.log_prefix} (梦羽AI) 响应中未找到图片数据")
+                    return False, "响应中未找到图片数据"
 
-                # 检查是否有错误
-                if result.get("error"):
-                    error_msg = result.get("error")
+                else:
+                    error_msg = result.get("message") or result.get("error") or "未知错误"
                     logger.error(f"{self.log_prefix} (梦羽AI) API返回错误: {error_msg}")
                     return False, f"API错误: {error_msg}"
-
-                if image_base64:
-                    logger.info(f"{self.log_prefix} (梦羽AI) 图片生成成功 (base64)")
-                    return True, image_base64
-
-                if image_url:
-                    # 下载图片
-                    logger.info(f"{self.log_prefix} (梦羽AI) 获取到图片URL: {image_url[:100]}...")
-                    image_data = self._download_image(image_url, proxy_config)
-                    if image_data:
-                        logger.info(f"{self.log_prefix} (梦羽AI) 图片生成成功")
-                        return True, image_data
-                    else:
-                        return False, "图片下载失败"
-
-                # 尝试直接返回响应内容（可能是二进制图片）
-                content_type = response.headers.get('Content-Type', '')
-                if 'image' in content_type:
-                    image_base64 = base64.b64encode(response.content).decode('utf-8')
-                    logger.info(f"{self.log_prefix} (梦羽AI) 图片生成成功 (binary)")
-                    return True, image_base64
-
-                logger.error(f"{self.log_prefix} (梦羽AI) 响应中未找到图片数据，完整响应: {result}")
-                return False, "响应中未找到图片数据"
 
             except json.JSONDecodeError:
                 # 可能直接返回的是图片
