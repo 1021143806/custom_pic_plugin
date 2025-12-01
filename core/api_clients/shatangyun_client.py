@@ -53,14 +53,19 @@ class ShatangyunClient(BaseApiClient):
                 "noise_schedule": model_config.get("noise_schedule", "karras"),
             }
 
+            # 添加artist参数
+            artist = model_config.get("artist", "")
+            if artist:
+                params["artist"] = artist
+
             # 添加负面提示词
             negative_prompt = model_config.get("negative_prompt_add", "")
             if negative_prompt:
-                params["uc"] = negative_prompt
+                params["negative"] = negative_prompt
 
             # 添加种子
             seed = model_config.get("seed")
-            if seed and seed != -1:
+            if seed is not None and seed != -1:
                 params["seed"] = seed
 
             # 构建URL
