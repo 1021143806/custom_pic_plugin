@@ -212,12 +212,16 @@ class Custom_Pic_Action(BaseAction):
             logger.info(f"{self.log_prefix} 自拍模式处理后的提示词: {description[:100]}...")
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
             # 检查是否配置了参考图片
             reference_image = self._get_selfie_reference_image()
             if reference_image:
                 # 检查模型是否支持图生图
                 model_config = self._get_model_config(model_id)
                 if model_config and model_config.get("support_img2img", True):
+<<<<<<< HEAD
                     logger.info(f"{self.log_prefix} 使用自拍参考图片进行图生图")
                     return await self._execute_unified_generation(description, model_id, size, strength or 0.6, reference_image)
                 else:
@@ -234,6 +238,13 @@ class Custom_Pic_Action(BaseAction):
                 else:
                     logger.warning(f"{self.log_prefix} 未找到自拍参考图片，使用文生图模式")
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+                    logger.info(f"{self.log_prefix} 使用自拍参考图片进行图生图")
+                    return await self._execute_unified_generation(description, model_id, size, strength or 0.6, reference_image)
+                else:
+                    logger.warning(f"{self.log_prefix} 模型 {model_id} 不支持图生图，自拍回退为文生图模式")
+            # 无参考图或模型不支持，继续使用文生图
+>>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
 
         # **智能检测：判断是文生图还是图生图**
         input_image_base64 = await self.image_processor.get_recent_image()
@@ -550,6 +561,7 @@ class Custom_Pic_Action(BaseAction):
         """获取自拍参考图片的base64编码
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         Returns:
             图片的base64编码，如果不存在则返回None
         """
@@ -764,37 +776,33 @@ class Custom_Pic_Action(BaseAction):
         优先使用reference_image_path，如果不存在则使用reference_image_base64
 >>>>>>> b183c65 (api客户端拆分重构)
 
+=======
+>>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
         Returns:
             图片的base64编码，如果不存在则返回None
         """
-        # 首先尝试从文件路径加载
         image_path = self.get_config("selfie.reference_image_path", "").strip()
-        if image_path:
-            try:
-                # 处理相对路径（相对于插件目录）
-                if not os.path.isabs(image_path):
-                    # 获取插件目录
-                    plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                    image_path = os.path.join(plugin_dir, image_path)
+        if not image_path:
+            return None
 
-                if os.path.exists(image_path):
-                    with open(image_path, 'rb') as f:
-                        image_data = f.read()
-                    image_base64 = base64.b64encode(image_data).decode('utf-8')
-                    logger.info(f"{self.log_prefix} 从文件加载自拍参考图片: {image_path}")
-                    return image_base64
-                else:
-                    logger.warning(f"{self.log_prefix} 自拍参考图片文件不存在: {image_path}")
-            except Exception as e:
-                logger.error(f"{self.log_prefix} 加载自拍参考图片失败: {e}")
+        try:
+            # 处理相对路径（相对于插件目录）
+            if not os.path.isabs(image_path):
+                plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                image_path = os.path.join(plugin_dir, image_path)
 
-        # 如果文件路径不可用，尝试使用base64配置
-        image_base64 = self.get_config("selfie.reference_image_base64", "").strip()
-        if image_base64:
-            logger.info(f"{self.log_prefix} 使用配置中的base64自拍参考图片")
-            return image_base64
-
-        return None
+            if os.path.exists(image_path):
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+                logger.info(f"{self.log_prefix} 从文件加载自拍参考图片: {image_path}")
+                return image_base64
+            else:
+                logger.warning(f"{self.log_prefix} 自拍参考图片文件不存在: {image_path}")
+                return None
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 加载自拍参考图片失败: {e}")
+            return None
 
     async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None):
         """安排最近发送消息的自动撤回

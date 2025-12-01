@@ -360,6 +360,7 @@ class CustomPicPlugin(BasePlugin):
                 type=str,
                 default="",
 <<<<<<< HEAD
+<<<<<<< HEAD
                 description="自拍参考图片路径（相对于插件目录或绝对路径）。配置后自动使用图生图模式，留空则使用纯文生图。若模型不支持图生图会自动回退",
                 placeholder="images/reference.png",
                 depends_on="selfie.enabled",
@@ -373,6 +374,9 @@ class CustomPicPlugin(BasePlugin):
                 default="",
                 description="自拍参考图片的base64编码。当reference_image_path为空时使用此配置"
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+                description="自拍参考图片路径（相对于插件目录或绝对路径）。配置后自动使用图生图模式，留空则使用纯文生图。若模型不支持图生图会自动回退"
+>>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
             ),
             "prompt_prefix": ConfigField(
                 type=str,
@@ -387,12 +391,15 @@ class CustomPicPlugin(BasePlugin):
                 order=3
 =======
                 description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform, 1girl'"
+<<<<<<< HEAD
             ),
             "use_reference_for_all": ConfigField(
                 type=bool,
                 default=False,
                 description="是否在所有自拍请求中使用参考图片进行图生图。开启后自拍将基于参考图生成"
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+>>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
             )
         },
         "auto_recall": {
@@ -540,6 +547,7 @@ class CustomPicPlugin(BasePlugin):
                 order=13
             ),
 <<<<<<< HEAD
+<<<<<<< HEAD
             "artist": ConfigField(
                 type=str,
                 default="",
@@ -561,6 +569,9 @@ class CustomPicPlugin(BasePlugin):
                 order=16
 =======
             "support_img2img": ConfigField(type=bool, default=True, description="是否支持图生图。不支持时自动降级为文生图"),
+=======
+            "support_img2img": ConfigField(type=bool, default=True, description="该模型是否支持图生图功能，请根据API文档自行判断。设为false时会自动降级为文生图"),
+>>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
             "num_inference_steps": ConfigField(type=int, default=20, description="推理步数，影响质量和速度。推荐20-50"),
             "auto_recall_delay": ConfigField(
                 type=int,
