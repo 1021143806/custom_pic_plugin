@@ -117,6 +117,7 @@ class OpenAIClient(BaseApiClient):
             "Authorization": f"{generate_api_key}",
         }
 
+<<<<<<< HEAD
         # 详细调试信息
         verbose_debug = self.action.get_config("components.enable_verbose_debug", False)
         if verbose_debug:
@@ -138,6 +139,8 @@ class OpenAIClient(BaseApiClient):
             logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 请求头: {safe_headers}")
             logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 请求体: {json.dumps(safe_payload, ensure_ascii=False, indent=2)}")
 
+=======
+>>>>>>> b183c65 (api客户端拆分重构)
         logger.info(f"{self.log_prefix} (OpenAI) 发起图片请求: {model}, Prompt: {prompt_add[:30]}... To: {endpoint}")
 
         # 获取代理配置
@@ -164,10 +167,13 @@ class OpenAIClient(BaseApiClient):
                 response_body_str = response_body_bytes.decode("utf-8")
                 logger.info(f"{self.log_prefix} (OpenAI) 响应: {response_status}. Preview: {response_body_str[:150]}...")
 
+<<<<<<< HEAD
                 # 详细调试信息
                 if verbose_debug:
                     logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 完整响应体: {response_body_str}")
 
+=======
+>>>>>>> b183c65 (api客户端拆分重构)
                 if 200 <= response_status < 300:
                     response_data = json.loads(response_body_str)
                     b64_data = None

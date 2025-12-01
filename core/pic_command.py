@@ -174,7 +174,11 @@ class PicGenerationCommand(BaseCommand):
                         if enable_debug:
                             await self.send_text(f"{style_name} 风格转换完成！")
                         # 安排自动撤回
+<<<<<<< HEAD
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id)
+=======
+                        await self._schedule_auto_recall_for_recent_message(model_config)
+>>>>>>> b183c65 (api客户端拆分重构)
                         return True, "图生图命令执行成功", True
                     else:
                         await self.send_text("图片发送失败")
@@ -191,7 +195,11 @@ class PicGenerationCommand(BaseCommand):
                                 if enable_debug:
                                     await self.send_text(f"{style_name} 风格转换完成！")
                                 # 安排自动撤回
+<<<<<<< HEAD
                                 await self._schedule_auto_recall_for_recent_message(model_config, model_id)
+=======
+                                await self._schedule_auto_recall_for_recent_message(model_config)
+>>>>>>> b183c65 (api客户端拆分重构)
                                 return True, "图生图命令执行成功", True
                             else:
                                 await self.send_text("图片发送失败")
@@ -316,7 +324,11 @@ class PicGenerationCommand(BaseCommand):
                         if enable_debug:
                             await self.send_text(f"{mode_text}完成！")
                         # 安排自动撤回
+<<<<<<< HEAD
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id)
+=======
+                        await self._schedule_auto_recall_for_recent_message(model_config)
+>>>>>>> b183c65 (api客户端拆分重构)
                         return True, f"{mode_text}命令执行成功", True
                     else:
                         await self.send_text("图片发送失败")
@@ -333,7 +345,11 @@ class PicGenerationCommand(BaseCommand):
                                 if enable_debug:
                                     await self.send_text(f"{mode_text}完成！")
                                 # 安排自动撤回
+<<<<<<< HEAD
                                 await self._schedule_auto_recall_for_recent_message(model_config, model_id)
+=======
+                                await self._schedule_auto_recall_for_recent_message(model_config)
+>>>>>>> b183c65 (api客户端拆分重构)
                                 return True, f"{mode_text}命令执行成功", True
                             else:
                                 await self.send_text("图片发送失败")
@@ -476,12 +492,19 @@ class PicGenerationCommand(BaseCommand):
         except Exception as e:
             return False, str(e)
 
+<<<<<<< HEAD
     async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None, model_id: str = None):
+=======
+    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None):
+>>>>>>> b183c65 (api客户端拆分重构)
         """安排最近发送消息的自动撤回
 
         Args:
             model_config: 当前使用的模型配置，用于检查撤回延时设置
+<<<<<<< HEAD
             model_id: 模型ID，用于检查运行时撤回状态
+=======
+>>>>>>> b183c65 (api客户端拆分重构)
         """
         # 检查全局开关
         global_enabled = self.get_config("auto_recall.enabled", False)
@@ -496,6 +519,7 @@ class PicGenerationCommand(BaseCommand):
         if delay_seconds <= 0:
             return
 
+<<<<<<< HEAD
         # 获取 chat_id（Command 通过 message.chat_stream.stream_id 获取）
         chat_stream = self.message.chat_stream if self.message else None
         chat_id = chat_stream.stream_id if chat_stream else None
@@ -513,6 +537,13 @@ class PicGenerationCommand(BaseCommand):
             try:
                 # 等待足够时间让消息存储和 echo 回调完成（平台返回真实消息ID需要时间）
                 await asyncio.sleep(4)
+=======
+        # 创建异步任务
+        async def recall_task():
+            try:
+                # 等待一小段时间让消息存储和 echo 回调完成
+                await asyncio.sleep(2)
+>>>>>>> b183c65 (api客户端拆分重构)
 
                 # 查询最近发送的消息获取消息ID
                 import time as time_module
@@ -522,7 +553,11 @@ class PicGenerationCommand(BaseCommand):
                 current_time = time_module.time()
                 # 查询最近10秒内本聊天中Bot发送的消息
                 messages = message_api.get_messages_by_time_in_chat(
+<<<<<<< HEAD
                     chat_id=chat_id,
+=======
+                    chat_id=self.chat_id,
+>>>>>>> b183c65 (api客户端拆分重构)
                     start_time=current_time - 10,
                     end_time=current_time + 1,
                     limit=5,
@@ -536,6 +571,7 @@ class PicGenerationCommand(BaseCommand):
                 for msg in messages:
                     if str(msg.user_info.user_id) == bot_id:
                         # 找到Bot发送的最新消息
+<<<<<<< HEAD
                         mid = str(msg.message_id)
                         # 只使用纯数字的消息ID（QQ平台真实ID），跳过 send_api_xxx 格式的内部ID
                         if mid.isdigit():
@@ -546,6 +582,13 @@ class PicGenerationCommand(BaseCommand):
 
                 if not target_message_id:
                     logger.warning(f"{self.log_prefix} 未找到有效的平台消息ID（需要纯数字格式）")
+=======
+                        target_message_id = msg.message_id
+                        break
+
+                if not target_message_id:
+                    logger.warning(f"{self.log_prefix} 未找到要撤回的消息ID")
+>>>>>>> b183c65 (api客户端拆分重构)
                     return
 
                 logger.info(f"{self.log_prefix} 安排消息自动撤回，延时: {delay_seconds}秒，消息ID: {target_message_id}")
@@ -553,6 +596,7 @@ class PicGenerationCommand(BaseCommand):
                 # 等待指定时间后撤回
                 await asyncio.sleep(delay_seconds)
 
+<<<<<<< HEAD
                 # 尝试多个撤回命令名（参考 recall_manager_plugin）
                 DELETE_COMMAND_CANDIDATES = ["DELETE_MSG", "delete_msg", "RECALL_MSG", "recall_msg"]
                 recall_success = False
@@ -582,6 +626,19 @@ class PicGenerationCommand(BaseCommand):
 
                 if not recall_success:
                     logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}，已尝试所有命令")
+=======
+                # 使用 send_command 发送撤回命令
+                success = await self.send_command(
+                    command_name="delete_msg",
+                    args={"message_id": target_message_id},
+                    storage_message=False
+                )
+
+                if success:
+                    logger.info(f"{self.log_prefix} 消息自动撤回成功，消息ID: {target_message_id}")
+                else:
+                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}")
+>>>>>>> b183c65 (api客户端拆分重构)
 
             except asyncio.CancelledError:
                 logger.debug(f"{self.log_prefix} 自动撤回任务被取消")

@@ -7,6 +7,7 @@ from src.common.logger import get_logger
 
 logger = get_logger("pic_action")
 
+<<<<<<< HEAD
 # LLM 尺寸选择系统提示词
 SIZE_SELECTOR_SYSTEM_PROMPT = """You are an image size selector. Based on the image description, choose the most appropriate size.
 
@@ -182,6 +183,8 @@ async def get_image_size_async(
     # 降级：使用默认尺寸
     return default_size, None
 
+=======
+>>>>>>> b183c65 (api客户端拆分重构)
 
 def gcd(a: int, b: int) -> int:
     """计算最大公约数
