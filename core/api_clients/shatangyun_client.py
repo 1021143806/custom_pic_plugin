@@ -101,11 +101,15 @@ class ShatangyunClient(BaseApiClient):
             }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 3301fb3 (适配UI)
             # 添加artist参数
             artist = model_config.get("artist", "")
             if artist:
                 params["artist"] = artist
 
+<<<<<<< HEAD
             # 添加负面提示词
             negative_prompt = model_config.get("negative_prompt_add", "")
             if negative_prompt:
@@ -115,15 +119,21 @@ class ShatangyunClient(BaseApiClient):
             seed = model_config.get("seed")
             if seed is not None and seed != -1:
 =======
+=======
+>>>>>>> 3301fb3 (适配UI)
             # 添加负面提示词
             negative_prompt = model_config.get("negative_prompt_add", "")
             if negative_prompt:
-                params["uc"] = negative_prompt
+                params["negative"] = negative_prompt
 
             # 添加种子
             seed = model_config.get("seed")
+<<<<<<< HEAD
             if seed and seed != -1:
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+            if seed is not None and seed != -1:
+>>>>>>> 3301fb3 (适配UI)
                 params["seed"] = seed
 
             # 构建URL
