@@ -3,9 +3,13 @@
 砂糖云是一个NovelAI图片生成代理服务
 API格式：GET请求，参数通过URL传递
 <<<<<<< HEAD
+<<<<<<< HEAD
 示例：https://std.loliyc.com/generate?tag=prompt&token=xxx&model=nai-diffusion-4-5-full&size=832x1216&steps=23&scale=5&cfg=0&sampler=k_euler_ancestral&nocache=0&noise_schedule=karras
 =======
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+示例：https://std.loliyc.com/generate?tag=prompt&token=xxx&model=nai-diffusion-4-5-full&size=832x1216&steps=23&scale=5&cfg=0&sampler=k_euler_ancestral&nocache=0&noise_schedule=karras
+>>>>>>> 8f68f5d (修复支持（除了comfyui）)
 """
 import base64
 import requests
@@ -14,9 +18,12 @@ from urllib.parse import urlencode
 
 from .base_client import BaseApiClient, logger
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 from ..size_utils import size_to_orientation, ORIENTATION_SIZE_MAPPING
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+>>>>>>> 8f68f5d (修复支持（除了comfyui）)
 
 
 class ShatangyunClient(BaseApiClient):
@@ -37,15 +44,20 @@ class ShatangyunClient(BaseApiClient):
             # API配置
             base_url = model_config.get("base_url", "https://std.loliyc.com").rstrip('/')
 <<<<<<< HEAD
+<<<<<<< HEAD
             token = model_config.get("api_key", "").replace("Bearer ", "")
 =======
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+            token = model_config.get("api_key", "").replace("Bearer ", "")
+>>>>>>> 8f68f5d (修复支持（除了comfyui）)
             model = model_config.get("model", "nai-diffusion-4-5-full")
 
             # 获取模型特定的配置参数
             custom_prompt_add = model_config.get("custom_prompt_add", "")
             full_prompt = prompt + custom_prompt_add
 
+<<<<<<< HEAD
 <<<<<<< HEAD
             # 尺寸参数：直接使用传入的像素格式（如 832x1216）
             size_param = size if size else model_config.get("default_size", "832x1216")
@@ -54,10 +66,15 @@ class ShatangyunClient(BaseApiClient):
             default_orientation = model_config.get("default_size", "竖图")
             size_param = size_to_orientation(size, default_orientation)
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+            # 尺寸参数：直接使用传入的像素格式（如 832x1216）
+            size_param = size if size else model_config.get("default_size", "832x1216")
+>>>>>>> 8f68f5d (修复支持（除了comfyui）)
 
             # 构建请求参数
             params = {
                 "tag": full_prompt,
+<<<<<<< HEAD
 <<<<<<< HEAD
                 "token": token,
                 "model": model,
@@ -70,6 +87,13 @@ class ShatangyunClient(BaseApiClient):
                 "steps": model_config.get("steps", 23),
                 "scale": model_config.get("scale", 5),
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+                "token": token,
+                "model": model,
+                "size": size_param,
+                "steps": model_config.get("num_inference_steps", 23),
+                "scale": model_config.get("guidance_scale", 5),
+>>>>>>> 8f68f5d (修复支持（除了comfyui）)
                 "cfg": model_config.get("cfg", 0),
                 "sampler": model_config.get("sampler", "k_euler_ancestral"),
                 "nocache": model_config.get("nocache", 0),

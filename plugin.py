@@ -482,9 +482,13 @@ class CustomPicPlugin(BasePlugin):
             "model": ConfigField(
                 type=str,
                 default="cancel13/liaocao",
+<<<<<<< HEAD
                 description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）",
                 placeholder="model-name 或 0",
                 order=5
+=======
+                description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）"
+>>>>>>> 8f68f5d (修复支持（除了comfyui）)
             ),
             "fixed_size_enabled": ConfigField(
                 type=bool,
