@@ -138,7 +138,7 @@ class CustomPicPlugin(BasePlugin):
             "model": ConfigField(
                 type=str,
                 default="cancel13/liaocao",
-                description="模型名称"
+                description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）"
             ),
             "fixed_size_enabled": ConfigField(
                 type=bool,

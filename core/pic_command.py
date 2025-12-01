@@ -420,11 +420,18 @@ class PicGenerationCommand(BaseCommand):
         if delay_seconds <= 0:
             return
 
+        # 获取 chat_id（Command 通过 message.chat_stream.stream_id 获取）
+        chat_stream = self.message.chat_stream if self.message else None
+        chat_id = chat_stream.stream_id if chat_stream else None
+        if not chat_id:
+            logger.warning(f"{self.log_prefix} 无法获取 chat_id，跳过自动撤回")
+            return
+
         # 创建异步任务
         async def recall_task():
             try:
-                # 等待一小段时间让消息存储和 echo 回调完成
-                await asyncio.sleep(2)
+                # 等待足够时间让消息存储和 echo 回调完成（平台返回真实消息ID需要时间）
+                await asyncio.sleep(4)
 
                 # 查询最近发送的消息获取消息ID
                 import time as time_module
@@ -434,7 +441,7 @@ class PicGenerationCommand(BaseCommand):
                 current_time = time_module.time()
                 # 查询最近10秒内本聊天中Bot发送的消息
                 messages = message_api.get_messages_by_time_in_chat(
-                    chat_id=self.chat_id,
+                    chat_id=chat_id,
                     start_time=current_time - 10,
                     end_time=current_time + 1,
                     limit=5,
@@ -448,11 +455,16 @@ class PicGenerationCommand(BaseCommand):
                 for msg in messages:
                     if str(msg.user_info.user_id) == bot_id:
                         # 找到Bot发送的最新消息
-                        target_message_id = msg.message_id
-                        break
+                        mid = str(msg.message_id)
+                        # 只使用纯数字的消息ID（QQ平台真实ID），跳过 send_api_xxx 格式的内部ID
+                        if mid.isdigit():
+                            target_message_id = mid
+                            break
+                        else:
+                            logger.debug(f"{self.log_prefix} 跳过非平台消息ID: {mid}")
 
                 if not target_message_id:
-                    logger.warning(f"{self.log_prefix} 未找到要撤回的消息ID")
+                    logger.warning(f"{self.log_prefix} 未找到有效的平台消息ID（需要纯数字格式）")
                     return
 
                 logger.info(f"{self.log_prefix} 安排消息自动撤回，延时: {delay_seconds}秒，消息ID: {target_message_id}")
@@ -460,17 +472,35 @@ class PicGenerationCommand(BaseCommand):
                 # 等待指定时间后撤回
                 await asyncio.sleep(delay_seconds)
 
-                # 使用 send_command 发送撤回命令
-                success = await self.send_command(
-                    command_name="delete_msg",
-                    args={"message_id": target_message_id},
-                    storage_message=False
-                )
+                # 尝试多个撤回命令名（参考 recall_manager_plugin）
+                DELETE_COMMAND_CANDIDATES = ["DELETE_MSG", "delete_msg", "RECALL_MSG", "recall_msg"]
+                recall_success = False
 
-                if success:
-                    logger.info(f"{self.log_prefix} 消息自动撤回成功，消息ID: {target_message_id}")
-                else:
-                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}")
+                for cmd in DELETE_COMMAND_CANDIDATES:
+                    try:
+                        result = await self.send_command(
+                            command_name=cmd,
+                            args={"message_id": str(target_message_id)},
+                            storage_message=False
+                        )
+
+                        # 检查返回结果
+                        if isinstance(result, bool) and result:
+                            recall_success = True
+                            logger.info(f"{self.log_prefix} 消息自动撤回成功，命令: {cmd}，消息ID: {target_message_id}")
+                            break
+                        elif isinstance(result, dict):
+                            status = str(result.get("status", "")).lower()
+                            if status in ("ok", "success") or result.get("retcode") == 0 or result.get("code") == 0:
+                                recall_success = True
+                                logger.info(f"{self.log_prefix} 消息自动撤回成功，命令: {cmd}，消息ID: {target_message_id}")
+                                break
+                    except Exception as e:
+                        logger.debug(f"{self.log_prefix} 撤回命令 {cmd} 失败: {e}")
+                        continue
+
+                if not recall_success:
+                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}，已尝试所有命令")
 
             except asyncio.CancelledError:
                 logger.debug(f"{self.log_prefix} 自动撤回任务被取消")

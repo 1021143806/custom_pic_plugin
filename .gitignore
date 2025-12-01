@@ -9,6 +9,7 @@ __pycache__/
 # 忽略特定文件
 config.toml
 .env
+nul
 
 # 忽略特定扩展名的文件（递归）
 **/*.tmp

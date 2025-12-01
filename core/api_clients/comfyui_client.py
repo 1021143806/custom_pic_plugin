@@ -53,8 +53,8 @@ class ComfyUIClient(BaseApiClient):
                 width=width,
                 height=height,
                 seed=model_config.get("seed", -1),
-                steps=model_config.get("steps", 20),
-                cfg=model_config.get("cfg", 7.0),
+                steps=model_config.get("num_inference_steps", 20),
+                cfg=model_config.get("guidance_scale", 7.0),
                 input_image_base64=input_image_base64,
                 strength=strength
             )
