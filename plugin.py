@@ -17,13 +17,14 @@ from .core.pic_action import Custom_Pic_Action
 from .core.pic_command import PicGenerationCommand, PicConfigCommand, PicStyleCommand
 from .core.config_manager import EnhancedConfigManager
 
+
 @register_plugin
 class CustomPicPlugin(BasePlugin):
     """统一的多模型图片生成插件，支持文生图和图生图"""
 
     # 插件基本信息
     plugin_name = "custom_pic_plugin"
-    plugin_version = "3.3.1"
+    plugin_version = "3.3.0"
     plugin_author = "Ptrel，Rabbit"
     enable_plugin = True
     dependencies: List[str] = []
@@ -32,17 +33,114 @@ class CustomPicPlugin(BasePlugin):
 
     # 配置节元数据
     config_section_descriptions = {
-        "plugin": "插件启用配置",
-        "generation": "图片生成默认配置",
-        "models": "多模型配置，每个模型都有独立的参数设置",
-        "cache": "结果缓存配置",
-        "components": "组件启用配置",
-        "logging": "日志配置",
-        "selfie": "自拍模式配置",
-        "auto_recall": "自动撤回配置"
+        "plugin": ConfigSection(
+            title="插件启用配置",
+            icon="info",
+            order=1
+        ),
+        "generation": ConfigSection(
+            title="图片生成默认配置",
+            icon="image",
+            order=2
+        ),
+        "components": ConfigSection(
+            title="组件启用配置",
+            icon="puzzle",
+            order=3
+        ),
+        "proxy": ConfigSection(
+            title="代理设置",
+            icon="globe",
+            order=4
+        ),
+        "cache": ConfigSection(
+            title="结果缓存配置",
+            icon="database",
+            order=5
+        ),
+        "selfie": ConfigSection(
+            title="自拍模式配置",
+            icon="camera",
+            order=6
+        ),
+        "auto_recall": ConfigSection(
+            title="自动撤回配置",
+            icon="trash",
+            order=7
+        ),
+        "styles": ConfigSection(
+            title="风格定义",
+            icon="palette",
+            order=8
+        ),
+        "style_aliases": ConfigSection(
+            title="风格别名",
+            icon="tag",
+            order=9
+        ),
+        "logging": ConfigSection(
+            title="日志配置",
+            icon="file-text",
+            collapsed=True,
+            order=10
+        ),
+        "models": ConfigSection(
+            title="多模型配置，每个模型都有独立的参数设置",
+            icon="cpu",
+            order=11
+        ),
+        "models.model1": ConfigSection(
+            title="模型1配置",
+            icon="box",
+            order=12
+        ),
     }
 
-    # 步骤2: 使用ConfigField定义详细的配置Schema
+    # 自定义布局：标签页
+    config_layout = ConfigLayout(
+        type="tabs",
+        tabs=[
+            ConfigTab(
+                id="basic",
+                title="基础设置",
+                sections=["plugin", "generation", "components"],
+                icon="settings"
+            ),
+            ConfigTab(
+                id="network",
+                title="网络配置",
+                sections=["proxy", "cache"],
+                icon="wifi"
+            ),
+            ConfigTab(
+                id="features",
+                title="功能配置",
+                sections=["selfie", "auto_recall"],
+                icon="zap"
+            ),
+            ConfigTab(
+                id="styles",
+                title="风格管理",
+                sections=["styles", "style_aliases"],
+                icon="palette"
+            ),
+            ConfigTab(
+                id="models",
+                title="模型管理",
+                sections=["models", "models.model1"],
+                icon="cpu"
+            ),
+            ConfigTab(
+                id="advanced",
+                title="高级",
+                sections=["logging"],
+                icon="terminal",
+                badge="Dev"
+            ),
+        ]
+    )
+
+    # 配置Schema
     config_schema = {
         "plugin": {
             "name": ConfigField(
@@ -55,7 +153,7 @@ class CustomPicPlugin(BasePlugin):
             ),
             "config_version": ConfigField(
                 type=str,
-                default="3.3.1",
+                default="3.3.0",
                 description="插件配置版本号",
                 disabled=True,
                 order=2
@@ -202,7 +300,7 @@ class CustomPicPlugin(BasePlugin):
             "cartoon": ConfigField(
                 type=str,
                 default="cartoon style, anime style, colorful, vibrant colors, clean lines",
-                description="卡通风格提示词",
+                description="卡通风格提示词。可添加更多风格，格式: 英文名 = \"英文提示词\"",
                 input_type="textarea",
                 rows=3,
                 order=1
@@ -219,7 +317,7 @@ class CustomPicPlugin(BasePlugin):
             "cartoon": ConfigField(
                 type=str,
                 default="卡通",
-                description="cartoon 风格的中文别名，支持多别名用逗号分隔",
+                description="风格中文别名，格式: 英文名 = \"中文名\"。支持多别名，用逗号分隔",
                 placeholder="卡通,动漫",
                 order=1
             )
@@ -260,47 +358,8 @@ class CustomPicPlugin(BasePlugin):
                 order=1
             )
         },
-        "prompt_optimizer": {
-            "enabled": ConfigField(
-                type=bool,
-                default=True,
-                description="是否启用提示词优化器。开启后会使用 MaiBot 主 LLM 将用户描述优化为专业英文提示词",
-                order=1
-            ),
-            "hint": ConfigField(
-                type=str,
-                default="优化器会自动将中文描述翻译并优化为专业的英文绘画提示词，提升生成效果。关闭后将直接使用用户原始描述。",
-                description="功能说明",
-                disabled=True,
-                order=2
-            )
-        },
-        "selfie": {
-            "enabled": ConfigField(
-                type=bool,
-                default=True,
-                description="是否启用自拍模式功能"
-            ),
-            "reference_image_path": ConfigField(
-                type=str,
-                default="",
-                description="自拍参考图片路径（相对于插件目录或绝对路径）。配置后自动使用图生图模式，留空则使用纯文生图。若模型不支持图生图会自动回退"
-            ),
-            "prompt_prefix": ConfigField(
-                type=str,
-                default="",
-                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform, 1girl'"
-            )
-        },
-        "auto_recall": {
-            "enabled": ConfigField(
-                type=bool,
-                default=False,
-                description="是否启用自动撤回功能（总开关）。关闭后所有模型的撤回都不生效"
-            )
-        },
         "models": {},
-        # 基础模型配置
+        # 基础模型配置模板
         "models.model1": {
             "name": ConfigField(
                 type=str,
@@ -329,12 +388,15 @@ class CustomPicPlugin(BasePlugin):
                 type=str,
                 default="openai",
                 description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，comfyui=ComfyUI，mengyuai=梦羽AI",
-                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"]
+                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"],
+                order=4
             ),
             "model": ConfigField(
                 type=str,
                 default="cancel13/liaocao",
-                description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）"
+                description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）",
+                placeholder="model-name 或 0",
+                order=5
             ),
             "fixed_size_enabled": ConfigField(
                 type=bool,
@@ -396,12 +458,27 @@ class CustomPicPlugin(BasePlugin):
                 rows=2,
                 order=13
             ),
-            "support_img2img": ConfigField(type=bool, default=True, description="该模型是否支持图生图功能，请根据API文档自行判断。设为false时会自动降级为文生图"),
-            "num_inference_steps": ConfigField(type=int, default=20, description="推理步数，影响质量和速度。推荐20-50"),
+            "artist": ConfigField(
+                type=str,
+                default="",
+                description="艺术家风格标签（砂糖云专用）。留空则不添加",
+                order=14
+            ),
+            "support_img2img": ConfigField(
+                type=bool,
+                default=True,
+                description="该模型是否支持图生图功能，请根据API文档自行判断。设为false时会自动降级为文生图",
+                order=15
+            ),
             "auto_recall_delay": ConfigField(
                 type=int,
                 default=0,
-                description="自动撤回延时（秒）。大于0时启用撤回，0或不填则不撤回"
+                description="自动撤回延时（秒）。大于0时启用撤回，0或不填则不撤回",
+                min=0,
+                max=120,
+                depends_on="auto_recall.enabled",
+                depends_value=True,
+                order=16
             ),
         }
     }
