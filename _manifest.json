@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "自定义智能多模型图片生成插件（custom_pic_plugin）",
-  "version": "3.2.0",
+  "version": "3.3.1",
   "description": "智能多模型图片生成插件，支持文生图和图生图自动识别。兼容OpenAI、豆包、Gemini、魔搭等多种API格式。提供命令式风格转换、模型配置管理、结果缓存等功能。支持动态模型切换、风格别名、调试开关等高级特性。",
   "author": {
     "name": "Ptrel，Rabbit",
@@ -14,9 +14,16 @@
   },
   "homepage_url": "https://github.com/1021143806/custom_pic_plugin",
   "repository_url": "https://github.com/1021143806/custom_pic_plugin",
-  "keywords": ["draw", "Expression", "ai", "image"],
-  "categories": ["Expression", "Picture"],
-  
+  "keywords": [
+    "draw",
+    "Expression",
+    "ai",
+    "image"
+  ],
+  "categories": [
+    "Expression",
+    "Picture"
+  ],
   "default_locale": "zh-CN",
   "locales_path": "_locales",
   
@@ -28,8 +35,19 @@
         "type": "action",
         "name": "draw_picture",
         "description": "智能图片生成，自动识别文生图/图生图",
-        "activation_modes": ["keyword", "llm_judge"],
-        "keywords": ["画", "绘制", "生成图片", "画图", "图生图", "修改图片", "风格转换"]
+        "activation_modes": [
+          "keyword",
+          "llm_judge"
+        ],
+        "keywords": [
+          "画",
+          "绘制",
+          "生成图片",
+          "画图",
+          "图生图",
+          "修改图片",
+          "风格转换"
+        ]
       },
       {
         "type": "command",
@@ -60,5 +78,6 @@
       "调试开关控制",
       "支持图生图开关"
     ]
-  }
+  },
+  "id": "Ptrel，Rabbit.custom_pic_plugin"
 }

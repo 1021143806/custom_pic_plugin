@@ -6,8 +6,8 @@
 - Gemini 格式
 - Modelscope 魔搭格式
 - Shatangyun 砂糖云格式 (NovelAI)
-- ComfyUI 格式
 - Mengyuai 梦羽AI格式
+- Zai 格式 (Gemini转发)
 """
 
 from .base_client import BaseApiClient
@@ -16,8 +16,8 @@ from .doubao_client import DoubaoClient
 from .gemini_client import GeminiClient
 from .modelscope_client import ModelscopeClient
 from .shatangyun_client import ShatangyunClient
-from .comfyui_client import ComfyUIClient
 from .mengyuai_client import MengyuaiClient
+from .zai_client import ZaiClient
 
 __all__ = [
     'BaseApiClient',
@@ -26,8 +26,8 @@ __all__ = [
     'GeminiClient',
     'ModelscopeClient',
     'ShatangyunClient',
-    'ComfyUIClient',
     'MengyuaiClient',
+    'ZaiClient',
     'ApiClient',
     'get_client_class',
 ]
@@ -40,8 +40,8 @@ CLIENT_MAPPING = {
     'gemini': GeminiClient,
     'modelscope': ModelscopeClient,
     'shatangyun': ShatangyunClient,
-    'comfyui': ComfyUIClient,
     'mengyuai': MengyuaiClient,
+    'zai': ZaiClient,
 }
 
 

@@ -7,6 +7,8 @@ from src.common.logger import get_logger
 
 from .api_clients import ApiClient
 from .image_utils import ImageProcessor
+from .runtime_state import runtime_state
+from .prompt_optimizer import optimize_prompt
 
 logger = get_logger("pic_command")
 
@@ -29,9 +31,29 @@ class PicGenerationCommand(BaseCommand):
         # 否则使用父类的get_config
         return super().get_config(key, default)
 
+    def _get_chat_id(self) -> Optional[str]:
+        """获取当前聊天流ID"""
+        try:
+            chat_stream = self.message.chat_stream if self.message else None
+            return chat_stream.stream_id if chat_stream else None
+        except Exception:
+            return None
+
     async def execute(self) -> Tuple[bool, Optional[str], bool]:
         """执行图生图命令，智能判断风格模式或自然语言模式"""
         logger.info(f"{self.log_prefix} 执行图生图命令")
+
+        # 获取聊天流ID
+        chat_id = self._get_chat_id()
+        if not chat_id:
+            await self.send_text("无法获取聊天信息")
+            return False, "无法获取chat_id", True
+
+        # 检查插件是否在当前聊天流启用
+        global_enabled = self.get_config("plugin.enabled", True)
+        if not runtime_state.is_plugin_enabled(chat_id, global_enabled):
+            logger.info(f"{self.log_prefix} 插件在当前聊天流已禁用")
+            return False, "插件已禁用", True
 
         # 获取匹配的内容
         content = self.matched_groups.get("content", "").strip()
@@ -73,8 +95,17 @@ class PicGenerationCommand(BaseCommand):
 
     async def _execute_style_mode(self, style_name: str, actual_style_name: str, style_prompt: str) -> Tuple[bool, Optional[str], bool]:
         """执行风格模式（只支持图生图，必须有输入图片）"""
-        # 从配置中获取Command组件使用的模型
-        model_id = self.get_config("components.pic_command_model", "model1")
+        # 获取聊天流ID
+        chat_id = self._get_chat_id()
+
+        # 从运行时状态获取Command组件使用的模型
+        global_command_model = self.get_config("components.pic_command_model", "model1")
+        model_id = runtime_state.get_command_default_model(chat_id, global_command_model) if chat_id else global_command_model
+
+        # 检查模型是否在当前聊天流启用
+        if chat_id and not runtime_state.is_model_enabled(chat_id, model_id):
+            await self.send_text(f"模型 {model_id} 当前不可用")
+            return False, f"模型 {model_id} 已禁用", True
 
         # 获取模型配置
         model_config = self._get_model_config(model_id)
@@ -130,7 +161,7 @@ class PicGenerationCommand(BaseCommand):
                         if enable_debug:
                             await self.send_text(f"{style_name} 风格转换完成！")
                         # 安排自动撤回
-                        await self._schedule_auto_recall_for_recent_message(model_config)
+                        await self._schedule_auto_recall_for_recent_message(model_config, model_id)
                         return True, "图生图命令执行成功", True
                     else:
                         await self.send_text("图片发送失败")
@@ -147,7 +178,7 @@ class PicGenerationCommand(BaseCommand):
                                 if enable_debug:
                                     await self.send_text(f"{style_name} 风格转换完成！")
                                 # 安排自动撤回
-                                await self._schedule_auto_recall_for_recent_message(model_config)
+                                await self._schedule_auto_recall_for_recent_message(model_config, model_id)
                                 return True, "图生图命令执行成功", True
                             else:
                                 await self.send_text("图片发送失败")
@@ -175,6 +206,9 @@ class PicGenerationCommand(BaseCommand):
         - /dr 画一只猫
         - /dr 用model1画一只猫
         """
+        # 获取聊天流ID
+        chat_id = self._get_chat_id()
+
         # 尝试从描述中提取模型ID
         extracted_model_id = self._extract_model_id(description)
 
@@ -184,8 +218,14 @@ class PicGenerationCommand(BaseCommand):
             description = self._remove_model_pattern(description)
             logger.info(f"{self.log_prefix} 从描述中提取模型ID: {model_id}")
         else:
-            # 使用默认模型
-            model_id = self.get_config("components.pic_command_model", "model1")
+            # 从运行时状态获取默认模型
+            global_command_model = self.get_config("components.pic_command_model", "model1")
+            model_id = runtime_state.get_command_default_model(chat_id, global_command_model) if chat_id else global_command_model
+
+        # 检查模型是否在当前聊天流启用
+        if chat_id and not runtime_state.is_model_enabled(chat_id, model_id):
+            await self.send_text(f"模型 {model_id} 当前不可用")
+            return False, f"模型 {model_id} 已禁用", True
 
         # 获取模型配置
         model_config = self._get_model_config(model_id)
@@ -215,8 +255,19 @@ class PicGenerationCommand(BaseCommand):
         mode_text = "图生图" if is_img2img_mode else "文生图"
         logger.info(f"{self.log_prefix} 自然语言模式使用{mode_text}")
 
+        # 提示词优化
+        optimizer_enabled = self.get_config("prompt_optimizer.enabled", True)
+        if optimizer_enabled:
+            logger.info(f"{self.log_prefix} 开始优化提示词...")
+            success, optimized_prompt = await optimize_prompt(description, self.log_prefix)
+            if success:
+                logger.info(f"{self.log_prefix} 提示词优化完成: {optimized_prompt[:80]}...")
+                description = optimized_prompt
+            else:
+                logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述")
+
         if enable_debug:
-            await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}：{description[:50]}...")
+            await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}...")
 
         try:
             # 获取重试次数配置
@@ -241,7 +292,7 @@ class PicGenerationCommand(BaseCommand):
                         if enable_debug:
                             await self.send_text(f"{mode_text}完成！")
                         # 安排自动撤回
-                        await self._schedule_auto_recall_for_recent_message(model_config)
+                        await self._schedule_auto_recall_for_recent_message(model_config, model_id)
                         return True, f"{mode_text}命令执行成功", True
                     else:
                         await self.send_text("图片发送失败")
@@ -258,7 +309,7 @@ class PicGenerationCommand(BaseCommand):
                                 if enable_debug:
                                     await self.send_text(f"{mode_text}完成！")
                                 # 安排自动撤回
-                                await self._schedule_auto_recall_for_recent_message(model_config)
+                                await self._schedule_auto_recall_for_recent_message(model_config, model_id)
                                 return True, f"{mode_text}命令执行成功", True
                             else:
                                 await self.send_text("图片发送失败")
@@ -401,11 +452,12 @@ class PicGenerationCommand(BaseCommand):
         except Exception as e:
             return False, str(e)
 
-    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None):
+    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None, model_id: str = None):
         """安排最近发送消息的自动撤回
 
         Args:
             model_config: 当前使用的模型配置，用于检查撤回延时设置
+            model_id: 模型ID，用于检查运行时撤回状态
         """
         # 检查全局开关
         global_enabled = self.get_config("auto_recall.enabled", False)
@@ -425,6 +477,11 @@ class PicGenerationCommand(BaseCommand):
         chat_id = chat_stream.stream_id if chat_stream else None
         if not chat_id:
             logger.warning(f"{self.log_prefix} 无法获取 chat_id，跳过自动撤回")
+            return
+
+        # 检查运行时撤回状态
+        if model_id and not runtime_state.is_recall_enabled(chat_id, model_id, global_enabled):
+            logger.info(f"{self.log_prefix} 模型 {model_id} 撤回已在当前聊天流禁用")
             return
 
         # 创建异步任务
@@ -517,7 +574,7 @@ class PicConfigCommand(BaseCommand):
     # Command基本信息
     command_name = "pic_config_command"
     command_description = "图片生成配置管理：/dr <操作> [参数]"
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<action>list|models|config|set|reset)(?:\s+(?P<params>.*))?$"
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<action>list|models|config|set|reset|on|off|model|recall|default)(?:\s+(?P<params>.*))?$"
 
     def get_config(self, key: str, default=None):
         """使用与PicGenerationCommand相同的配置覆盖"""
@@ -526,6 +583,14 @@ class PicConfigCommand(BaseCommand):
             return PicGenerationCommand._config_overrides[key]
         # 否则使用父类的get_config
         return super().get_config(key, default)
+
+    def _get_chat_id(self) -> Optional[str]:
+        """获取当前聊天流ID"""
+        try:
+            chat_stream = self.message.chat_stream if self.message else None
+            return chat_stream.stream_id if chat_stream else None
+        except Exception:
+            return None
 
     async def execute(self) -> Tuple[bool, Optional[str], bool]:
         """执行配置管理命令"""
@@ -539,19 +604,36 @@ class PicConfigCommand(BaseCommand):
         # 检查用户权限
         has_permission = self._check_permission()
 
-        # 对于需要管理员权限的操作进行权限检查
-        if not has_permission and action not in ["list", "models"]:
+        # 获取聊天流ID
+        chat_id = self._get_chat_id()
+        if not chat_id:
+            await self.send_text("无法获取聊天信息")
+            return False, "无法获取chat_id", True
+
+        # 需要管理员权限的操作
+        admin_only_actions = ["set", "reset", "on", "off", "model", "recall", "default"]
+        if not has_permission and action in admin_only_actions:
             await self.send_text("你无权使用此命令", storage_message=False)
             return False, "没有权限", True
 
         if action == "list" or action == "models":
-            return await self._list_models()
+            return await self._list_models(chat_id, has_permission)
         elif action == "set":
-            return await self._set_model(params)
+            return await self._set_model(params, chat_id)
         elif action == "config":
-            return await self._show_current_config()
+            return await self._show_current_config(chat_id)
         elif action == "reset":
-            return await self._reset_config()
+            return await self._reset_config(chat_id)
+        elif action == "on":
+            return await self._enable_plugin(chat_id)
+        elif action == "off":
+            return await self._disable_plugin(chat_id)
+        elif action == "model":
+            return await self._toggle_model(params, chat_id)
+        elif action == "recall":
+            return await self._toggle_recall(params, chat_id)
+        elif action == "default":
+            return await self._set_default_model(params, chat_id)
         else:
             await self.send_text(
                 "配置管理命令使用方法：\n"
@@ -562,7 +644,7 @@ class PicConfigCommand(BaseCommand):
             )
             return False, "无效的操作参数", True
 
-    async def _list_models(self) -> Tuple[bool, Optional[str], bool]:
+    async def _list_models(self, chat_id: str, is_admin: bool) -> Tuple[bool, Optional[str], bool]:
         """列出所有可用的模型"""
         try:
             models_config = self.get_config("models", {})
@@ -571,25 +653,51 @@ class PicConfigCommand(BaseCommand):
                 return False, "无模型配置", True
 
             # 获取当前默认模型
-            current_default = self.get_config("generation.default_model", "model1")
-            current_command = self.get_config("components.pic_command_model", "model1")
+            global_default = self.get_config("generation.default_model", "model1")
+            global_command = self.get_config("components.pic_command_model", "model1")
+
+            # 获取运行时状态
+            action_default = runtime_state.get_action_default_model(chat_id, global_default)
+            command_default = runtime_state.get_command_default_model(chat_id, global_command)
+            disabled_models = runtime_state.get_disabled_models(chat_id)
+            recall_disabled = runtime_state.get_recall_disabled_models(chat_id)
 
             message_lines = ["📋 可用模型列表：\n"]
 
             for model_id, config in models_config.items():
                 if isinstance(config, dict):
-                    model_name = config.get("model", "未知")
+                    # 检查模型是否被禁用
+                    is_disabled = model_id in disabled_models
+
+                    # 非管理员不显示被禁用的模型
+                    if is_disabled and not is_admin:
+                        continue
+
+                    model_name = config.get("name", config.get("model", "未知"))
                     support_img2img = config.get("support_img2img", True)
 
                     # 标记当前使用的模型
-                    default_mark = " ✅[默认]" if model_id == current_default else ""
-                    command_mark = " 🔧[命令]" if model_id == current_command else ""
+                    default_mark = " ✅[Action默认]" if model_id == action_default else ""
+                    command_mark = " 🔧[Command默认]" if model_id == command_default else ""
                     img2img_mark = " 🖼️[文/图生图]" if support_img2img else " 📝[仅文生图]"
 
+                    # 管理员额外标记
+                    disabled_mark = " ❌[已禁用]" if is_disabled else ""
+                    recall_mark = " 🔕[撤回关]" if model_id in recall_disabled else ""
+
                     message_lines.append(
-                        f"• {model_id}{default_mark}{command_mark}{img2img_mark}\n"
+                        f"• {model_id}{default_mark}{command_mark}{img2img_mark}{disabled_mark}{recall_mark}\n"
                         f"  模型: {model_name}\n"
                     )
+
+            # 管理员额外提示
+            if is_admin:
+                message_lines.append("\n⚙️ 管理员命令：")
+                message_lines.append("• /dr on|off - 开关插件")
+                message_lines.append("• /dr model on|off <模型ID> - 开关模型")
+                message_lines.append("• /dr recall on|off <模型ID> - 开关撤回")
+                message_lines.append("• /dr default <模型ID> - 设置Action默认模型")
+                message_lines.append("• /dr set <模型ID> - 设置Command默认模型")
 
             message = "\n".join(message_lines)
             await self.send_text(message)
@@ -600,8 +708,8 @@ class PicConfigCommand(BaseCommand):
             await self.send_text(f"获取模型列表失败：{str(e)[:100]}")
             return False, f"列出模型失败: {str(e)}", True
 
-    async def _set_model(self, model_id: str) -> Tuple[bool, Optional[str], bool]:
-        """设置图生图命令使用的模型"""
+    async def _set_model(self, model_id: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """设置图生图命令使用的模型（Command组件）"""
         try:
             if not model_id:
                 await self.send_text("请指定模型ID，格式：/dr set <模型ID>")
@@ -613,66 +721,44 @@ class PicConfigCommand(BaseCommand):
                 await self.send_text(f"模型 '{model_id}' 不存在，请使用 /dr list 查看可用模型")
                 return False, f"模型 '{model_id}' 不存在", True
 
-            # 获取当前配置
-            current_command_model = self.get_config("components.pic_command_model", "model1")
-            model_name = model_config.get("model", "未知") if isinstance(model_config, dict) else "未知"
+            # 检查模型是否被禁用
+            if not runtime_state.is_model_enabled(chat_id, model_id):
+                await self.send_text(f"模型 '{model_id}' 已被禁用")
+                return False, f"模型 '{model_id}' 已被禁用", True
 
-            if current_command_model == model_id:
-                await self.send_text(f"✅ 当前图生图命令已经在使用模型 '{model_id}' ({model_name})")
-                return True, "模型已是当前使用的模型", True
+            model_name = model_config.get("name", model_config.get("model", "未知")) if isinstance(model_config, dict) else "未知"
 
-            # 尝试动态修改配置
-            try:
-                # 通过插件实例修改配置
-                success = await self._update_command_model_config(model_id)
+            # 设置运行时状态
+            runtime_state.set_command_default_model(chat_id, model_id)
 
-                if success:
-                    await self.send_text(f"✅ 已切换到模型: {model_id}")
-                    return True, f"模型切换成功: {model_id}", True
-                else:
-                    await self.send_text(f"⚠️ 切换失败，请手动修改配置文件")
-                    return False, "动态配置更新失败", True
-
-            except Exception as e:
-                logger.error(f"{self.log_prefix} 动态更新配置失败: {e!r}")
-                await self.send_text(f"⚠️ 配置更新失败：{str(e)[:50]}")
-                return False, f"配置更新异常: {str(e)}", True
+            await self.send_text(f"已切换: {model_id}")
+            return True, f"模型切换成功: {model_id}", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 设置模型失败: {e!r}")
             await self.send_text(f"设置失败：{str(e)[:100]}")
             return False, f"设置模型失败: {str(e)}", True
 
-    async def _update_command_model_config(self, model_id: str) -> bool:
-        """动态更新命令模型配置"""
+    async def _reset_config(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """重置当前聊天流的配置为默认值"""
         try:
-            # 使用类级别的配置覆盖机制（这会影响所有PicGenerationCommand实例）
-            PicGenerationCommand._config_overrides["components.pic_command_model"] = model_id
+            # 重置运行时状态
+            runtime_state.reset_chat_state(chat_id)
 
-            logger.info(f"{self.log_prefix} 已设置配置覆盖: components.pic_command_model = {model_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 更新配置时异常: {e!r}")
-            return False
-
-    async def _reset_config(self) -> Tuple[bool, Optional[str], bool]:
-        """重置配置为默认值"""
-        try:
-            # 清除所有配置覆盖
-            PicGenerationCommand._config_overrides.clear()
-
-            # 获取默认配置
-            default_model = super().get_config("components.pic_command_model", "model1")
+            # 获取全局默认配置
+            global_action_model = self.get_config("generation.default_model", "model1")
+            global_command_model = self.get_config("components.pic_command_model", "model1")
 
             await self.send_text(
-                f"✅ 配置已重置为默认值！\n\n"
-                f"🔄 图生图命令模型: {default_model}\n"
-                f"💡 所有运行时配置覆盖已清除\n\n"
+                f"✅ 当前聊天流配置已重置！\n\n"
+                f"🎯 Action默认模型: {global_action_model}\n"
+                f"🔧 Command默认模型: {global_command_model}\n"
+                f"📋 所有模型已启用\n"
+                f"🔔 所有撤回已启用\n\n"
                 f"使用 /dr config 查看当前配置"
             )
 
-            logger.info(f"{self.log_prefix} 配置已重置，清除了所有覆盖")
+            logger.info(f"{self.log_prefix} 聊天流 {chat_id} 配置已重置")
             return True, "配置重置成功", True
 
         except Exception as e:
@@ -680,46 +766,51 @@ class PicConfigCommand(BaseCommand):
             await self.send_text(f"重置失败：{str(e)[:100]}")
             return False, f"重置配置失败: {str(e)}", True
 
-    async def _show_current_config(self) -> Tuple[bool, Optional[str], bool]:
+    async def _show_current_config(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
         """显示当前配置信息"""
         try:
-            # 获取当前配置
-            default_model = self.get_config("generation.default_model", "model1")
-            command_model = self.get_config("components.pic_command_model", "model1")
-            cache_enabled = self.get_config("cache.enabled", True)
-            debug_enabled = self.get_config("components.enable_debug_info", False)
+            # 获取全局配置
+            global_action_model = self.get_config("generation.default_model", "model1")
+            global_command_model = self.get_config("components.pic_command_model", "model1")
+            global_plugin_enabled = self.get_config("plugin.enabled", True)
+            global_recall_enabled = self.get_config("auto_recall.enabled", False)
 
-            # 检查是否有配置覆盖
-            original_command_model = super().get_config("components.pic_command_model", "model1")
-            has_override = command_model != original_command_model
+            # 获取运行时状态
+            plugin_enabled = runtime_state.is_plugin_enabled(chat_id, global_plugin_enabled)
+            action_model = runtime_state.get_action_default_model(chat_id, global_action_model)
+            command_model = runtime_state.get_command_default_model(chat_id, global_command_model)
+            disabled_models = runtime_state.get_disabled_models(chat_id)
+            recall_disabled = runtime_state.get_recall_disabled_models(chat_id)
 
-            # 获取默认模型详细信息
-            default_config = self.get_config(f"models.{default_model}", {})
+            # 获取模型详细信息
+            action_config = self.get_config(f"models.{action_model}", {})
             command_config = self.get_config(f"models.{command_model}", {})
 
             # 构建配置信息
             message_lines = [
-                "⚙️ 当前图片生成配置：\n",
-                f"🎯 默认模型: {default_model}",
-                f"   • 名称: {default_config.get('model', '未知') if isinstance(default_config, dict) else '未知'}\n",
-
-                f"🔧 图生图命令模型: {command_model}" + (" 🔥[运行时]" if has_override else ""),
-                f"   • 名称: {command_config.get('model', '未知') if isinstance(command_config, dict) else '未知'}",
+                f"⚙️ 当前聊天流配置 (ID: {chat_id[:8]}...)：\n",
+                f"🔌 插件状态: {'✅ 启用' if plugin_enabled else '❌ 禁用'}",
+                f"🎯 Action默认模型: {action_model}",
+                f"   • 名称: {action_config.get('name', action_config.get('model', '未知')) if isinstance(action_config, dict) else '未知'}\n",
+                f"🔧 Command默认模型: {command_model}",
+                f"   • 名称: {command_config.get('name', command_config.get('model', '未知')) if isinstance(command_config, dict) else '未知'}",
             ]
 
-            if has_override:
-                message_lines.extend([
-                    f"   • 原始配置: {original_command_model}",
-                    f"   ⚡ 当前使用运行时覆盖配置"
-                ])
+            if disabled_models:
+                message_lines.append(f"\n❌ 已禁用模型: {', '.join(disabled_models)}")
+
+            if recall_disabled:
+                message_lines.append(f"🔕 撤回已关闭: {', '.join(recall_disabled)}")
 
             # 管理员命令提示
             message_lines.extend([
                 "\n📖 管理员命令：",
-                "• /dr list - 查看所有模型",
-                "• /dr set <模型ID> - 设置图生图模型",
-                "• /dr reset - 重置为默认配置",
-                "• /dr <风格> - 使用风格进行图生图"
+                "• /dr on|off - 开关插件",
+                "• /dr model on|off <模型ID> - 开关模型",
+                "• /dr recall on|off <模型ID> - 开关撤回",
+                "• /dr default <模型ID> - 设置Action默认",
+                "• /dr set <模型ID> - 设置Command默认",
+                "• /dr reset - 重置所有配置"
             ])
 
             message = "\n".join(message_lines)
@@ -730,6 +821,123 @@ class PicConfigCommand(BaseCommand):
             logger.error(f"{self.log_prefix} 显示配置失败: {e!r}")
             await self.send_text(f"获取配置失败：{str(e)[:100]}")
             return False, f"显示配置失败: {str(e)}", True
+
+    async def _enable_plugin(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """启用当前聊天流的插件"""
+        try:
+            runtime_state.set_plugin_enabled(chat_id, True)
+            await self.send_text("已启用")
+            return True, "插件已启用", True
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 启用插件失败: {e!r}")
+            await self.send_text(f"启用失败：{str(e)[:100]}")
+            return False, f"启用插件失败: {str(e)}", True
+
+    async def _disable_plugin(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """禁用当前聊天流的插件"""
+        try:
+            runtime_state.set_plugin_enabled(chat_id, False)
+            await self.send_text("已禁用")
+            return True, "插件已禁用", True
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 禁用插件失败: {e!r}")
+            await self.send_text(f"禁用失败：{str(e)[:100]}")
+            return False, f"禁用插件失败: {str(e)}", True
+
+    async def _toggle_model(self, params: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """开关指定模型"""
+        try:
+            # 解析参数: on/off model_id
+            parts = params.split(maxsplit=1)
+            if len(parts) < 2:
+                await self.send_text("格式：/dr model on|off <模型ID>")
+                return False, "参数不足", True
+
+            action, model_id = parts[0].lower(), parts[1].strip()
+
+            if action not in ["on", "off"]:
+                await self.send_text("格式：/dr model on|off <模型ID>")
+                return False, "无效的操作", True
+
+            # 检查模型是否存在
+            model_config = self.get_config(f"models.{model_id}")
+            if not model_config:
+                await self.send_text(f"模型 '{model_id}' 不存在")
+                return False, f"模型不存在", True
+
+            enabled = action == "on"
+            runtime_state.set_model_enabled(chat_id, model_id, enabled)
+
+            status = "启用" if enabled else "禁用"
+            await self.send_text(f"{model_id} 已{status}")
+            return True, f"模型{status}成功", True
+
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 切换模型状态失败: {e!r}")
+            await self.send_text(f"操作失败：{str(e)[:100]}")
+            return False, f"切换模型状态失败: {str(e)}", True
+
+    async def _toggle_recall(self, params: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """开关指定模型的撤回功能"""
+        try:
+            # 解析参数: on/off model_id
+            parts = params.split(maxsplit=1)
+            if len(parts) < 2:
+                await self.send_text("格式：/dr recall on|off <模型ID>")
+                return False, "参数不足", True
+
+            action, model_id = parts[0].lower(), parts[1].strip()
+
+            if action not in ["on", "off"]:
+                await self.send_text("格式：/dr recall on|off <模型ID>")
+                return False, "无效的操作", True
+
+            # 检查模型是否存在
+            model_config = self.get_config(f"models.{model_id}")
+            if not model_config:
+                await self.send_text(f"模型 '{model_id}' 不存在")
+                return False, f"模型不存在", True
+
+            enabled = action == "on"
+            runtime_state.set_recall_enabled(chat_id, model_id, enabled)
+
+            status = "启用" if enabled else "禁用"
+            await self.send_text(f"{model_id} 撤回已{status}")
+            return True, f"撤回{status}成功", True
+
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 切换撤回状态失败: {e!r}")
+            await self.send_text(f"操作失败：{str(e)[:100]}")
+            return False, f"切换撤回状态失败: {str(e)}", True
+
+    async def _set_default_model(self, model_id: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
+        """设置Action组件的默认模型"""
+        try:
+            if not model_id:
+                await self.send_text("格式：/dr default <模型ID>")
+                return False, "缺少模型ID", True
+
+            # 检查模型是否存在
+            model_config = self.get_config(f"models.{model_id}")
+            if not model_config:
+                await self.send_text(f"模型 '{model_id}' 不存在")
+                return False, f"模型不存在", True
+
+            # 检查模型是否被禁用
+            if not runtime_state.is_model_enabled(chat_id, model_id):
+                await self.send_text(f"模型 '{model_id}' 已被禁用")
+                return False, f"模型已被禁用", True
+
+            model_name = model_config.get("name", model_config.get("model", "未知")) if isinstance(model_config, dict) else "未知"
+            runtime_state.set_action_default_model(chat_id, model_id)
+
+            await self.send_text(f"已设置: {model_id}")
+            return True, f"设置成功", True
+
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 设置默认模型失败: {e!r}")
+            await self.send_text(f"设置失败：{str(e)[:100]}")
+            return False, f"设置默认模型失败: {str(e)}", True
 
     def _check_permission(self) -> bool:
         """检查用户权限"""

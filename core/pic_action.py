@@ -12,6 +12,8 @@ from .api_clients import get_client_class
 from .image_utils import ImageProcessor
 from .cache_manager import CacheManager
 from .size_utils import validate_image_size
+from .runtime_state import runtime_state
+from .prompt_optimizer import optimize_prompt
 
 logger = get_logger("pic_action")
 
@@ -78,36 +80,15 @@ class Custom_Pic_Action(BaseAction):
 
     keyword_case_sensitive = False
 
-    # 动作参数定义
+    # 动作参数定义（简化版，提示词优化由独立模块处理）
     action_parameters = {
-        "description": """作为AI绘画提示词工程师，你需要根据用户的需求生成高质量的英文绘画提示词。
-
-**核心要求：**
-1. 将所有中文描述翻译为英文单词组合，用逗号分隔
-2. 提示词必须全部为英文，不能出现任何中文字符
-3. 遵循"主体,动作,环境,画质"的结构
-4. 使用括号和权重标记强调重点元素，如(keyword:1.3)
-
-**标准提示词格式：**
-- 主体描述：清晰定义主体特征（人物、动物、物体等）
-- 动作状态：描述主体的姿态、动作或状态
-- 环境背景：场景设置、光照、氛围
-- 画质标签：masterpiece, best quality, high resolution等
-
-**示例：**
-用户："画一个在海边的女孩"
-输出："1girl, standing, beach, ocean, sunset, warm lighting, masterpiece, best quality"
-
-用户："可爱的猫咪在睡觉"
-输出："cute cat, sleeping, curled up, soft lighting, cozy, fluffy fur, masterpiece, best quality"
-
-请根据用户的描述，生成符合以上格式的英文提示词。必填参数。""",
-        "model_id": "要使用的模型ID（如model1、model2、model3等，默认使用default_model配置的模型）",
-        "strength": "图生图强度，0.1-1.0之间，值越高变化越大（仅图生图时使用，可选，默认0.7）",
-        "size": "图片尺寸，格式为宽x高（宽高范围：64-4096），如512x512、1024x1024、1024x1536、1920x1080等。请根据用户描述的内容类型智能判断合适的尺寸和比例：人物肖像适合竖图（如1024x1536）、风景适合横图（如1920x1080）、头像适合方图（如1024x1024）。你可以在64-4096范围内灵活选择任何合理的尺寸，不限于示例。自拍模式必需填写；其他情况强烈推荐填写，有助于生成更符合预期的图片效果",
-        "selfie_mode": "是否启用自拍模式（true/false，可选，默认false）。启用后会自动添加自拍场景和手部动作",
-        "selfie_style": "自拍风格，可选值：standard（标准自拍，适用于户外或无镜子场景），mirror（对镜自拍，适用于有镜子的室内场景）。仅在selfie_mode=true时生效，可选，默认standard",
-        "free_hand_action": "自由手部动作描述（英文）。如果指定此参数，将使用此动作而不是随机生成。仅在selfie_mode=true时生效，可选"
+        "description": "用户想要画的内容描述（中文或英文均可，系统会自动优化为专业提示词）。必填参数。",
+        "model_id": "要使用的模型ID（如model1、model2等），可选，默认使用配置的默认模型",
+        "strength": "图生图强度，0.1-1.0，值越高变化越大。仅图生图时使用，可选，默认0.7",
+        "size": "图片尺寸，格式为宽x高（如1024x1024、1024x1536）。根据内容选择：人物肖像用竖图、风景用横图、头像用方图。可选",
+        "selfie_mode": "是否启用自拍模式（true/false），可选，默认false",
+        "selfie_style": "自拍风格：standard（标准）或 mirror（对镜），仅selfie_mode=true时生效，可选",
+        "free_hand_action": "自定义手部动作描述（英文），仅selfie_mode=true时生效，可选"
     }
 
     # 动作使用场景
@@ -136,6 +117,12 @@ class Custom_Pic_Action(BaseAction):
         """执行统一图片生成动作"""
         logger.info(f"{self.log_prefix} 执行统一图片生成动作")
 
+        # 检查插件是否在当前聊天流启用
+        global_enabled = self.get_config("plugin.enabled", True)
+        if not runtime_state.is_plugin_enabled(self.chat_id, global_enabled):
+            logger.info(f"{self.log_prefix} 插件在当前聊天流已禁用")
+            return False, "插件已禁用"
+
         # 获取参数
         description = self.action_data.get("description", "").strip()
         model_id = self.action_data.get("model_id", "").strip()
@@ -144,6 +131,17 @@ class Custom_Pic_Action(BaseAction):
         selfie_mode = self.action_data.get("selfie_mode", False)
         selfie_style = self.action_data.get("selfie_style", "standard").strip().lower()
         free_hand_action = self.action_data.get("free_hand_action", "").strip()
+
+        # 如果没有指定模型，使用运行时状态的默认模型
+        if not model_id:
+            global_default = self.get_config("generation.default_model", "model1")
+            model_id = runtime_state.get_action_default_model(self.chat_id, global_default)
+
+        # 检查模型是否在当前聊天流启用
+        if not runtime_state.is_model_enabled(self.chat_id, model_id):
+            logger.warning(f"{self.log_prefix} 模型 {model_id} 在当前聊天流已禁用")
+            await self.send_text(f"模型 {model_id} 当前不可用")
+            return False, f"模型 {model_id} 已禁用"
 
         # 参数验证
         if not description:
@@ -155,6 +153,17 @@ class Custom_Pic_Action(BaseAction):
         if len(description) > 1000:
             description = description[:1000]
             logger.info(f"{self.log_prefix} 图片描述过长，已截断至1000字符")
+
+        # 提示词优化
+        optimizer_enabled = self.get_config("prompt_optimizer.enabled", True)
+        if optimizer_enabled:
+            logger.info(f"{self.log_prefix} 开始优化提示词...")
+            success, optimized_prompt = await optimize_prompt(description, self.log_prefix)
+            if success:
+                logger.info(f"{self.log_prefix} 提示词优化完成: {optimized_prompt[:80]}...")
+                description = optimized_prompt
+            else:
+                logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述")
 
         # 验证strength参数
         try:
@@ -548,6 +557,19 @@ class Custom_Pic_Action(BaseAction):
 
         delay_seconds = model_config.get("auto_recall_delay", 0)
         if delay_seconds <= 0:
+            return
+
+        # 获取模型ID用于检查运行时撤回状态
+        model_id = None
+        models_config = self.get_config("models", {})
+        for mid, config in models_config.items():
+            if config == model_config:
+                model_id = mid
+                break
+
+        # 检查运行时撤回状态
+        if model_id and not runtime_state.is_recall_enabled(self.chat_id, model_id, global_enabled):
+            logger.info(f"{self.log_prefix} 模型 {model_id} 撤回已在当前聊天流禁用")
             return
 
         # 创建异步任务
