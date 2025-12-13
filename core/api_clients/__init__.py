@@ -8,8 +8,6 @@
 - Shatangyun 砂糖云格式 (NovelAI)
 - Mengyuai 梦羽AI格式
 - Zai 格式 (Gemini转发)
-- ComfyUI 格式
-- Mengyuai 梦羽AI格式
 """
 
 from .base_client import BaseApiClient
@@ -20,8 +18,6 @@ from .modelscope_client import ModelscopeClient
 from .shatangyun_client import ShatangyunClient
 from .mengyuai_client import MengyuaiClient
 from .zai_client import ZaiClient
-from .comfyui_client import ComfyUIClient
-from .mengyuai_client import MengyuaiClient
 
 __all__ = [
     'BaseApiClient',
@@ -32,8 +28,6 @@ __all__ = [
     'ShatangyunClient',
     'MengyuaiClient',
     'ZaiClient',
-    'ComfyUIClient',
-    'MengyuaiClient',
     'ApiClient',
     'get_client_class',
 ]
@@ -48,8 +42,6 @@ CLIENT_MAPPING = {
     'shatangyun': ShatangyunClient,
     'mengyuai': MengyuaiClient,
     'zai': ZaiClient,
-    'comfyui': ComfyUIClient,
-    'mengyuai': MengyuaiClient,
 }
 
 

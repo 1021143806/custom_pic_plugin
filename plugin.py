@@ -24,7 +24,7 @@ class CustomPicPlugin(BasePlugin):
 
     # 插件基本信息
     plugin_name = "custom_pic_plugin"
-    plugin_version = "3.3.0"
+    plugin_version = "3.3.1"
     plugin_author = "Ptrel，Rabbit"
     enable_plugin = True
     dependencies: List[str] = []
@@ -45,7 +45,7 @@ class CustomPicPlugin(BasePlugin):
         ),
         "components": ConfigSection(
             title="组件启用配置",
-            icon="puzzle",
+            icon="puzzle-piece",
             order=3
         ),
         "proxy": ConfigSection(
@@ -68,31 +68,40 @@ class CustomPicPlugin(BasePlugin):
             icon="trash",
             order=7
         ),
+        "prompt_optimizer": ConfigSection(
+            title="提示词优化器",
+            description="使用 MaiBot 主 LLM 将用户描述优化为专业绘画提示词",
+            icon="wand-2",
+            order=8
+        ),
         "styles": ConfigSection(
             title="风格定义",
+            description="预设风格的提示词。添加更多风格请直接编辑 config.toml，格式：风格英文名 = \"提示词\"",
             icon="palette",
-            order=8
+            order=9
         ),
         "style_aliases": ConfigSection(
             title="风格别名",
+            description="风格的中文别名映射。添加更多别名请直接编辑 config.toml",
             icon="tag",
-            order=9
+            order=10
         ),
         "logging": ConfigSection(
             title="日志配置",
             icon="file-text",
             collapsed=True,
-            order=10
+            order=11
         ),
         "models": ConfigSection(
-            title="多模型配置，每个模型都有独立的参数设置",
+            title="多模型配置",
+            description="添加更多模型请直接编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
             icon="cpu",
-            order=11
+            order=12
         ),
         "models.model1": ConfigSection(
             title="模型1配置",
             icon="box",
-            order=12
+            order=13
         ),
     }
 
@@ -115,7 +124,7 @@ class CustomPicPlugin(BasePlugin):
             ConfigTab(
                 id="features",
                 title="功能配置",
-                sections=["selfie", "auto_recall"],
+                sections=["selfie", "auto_recall", "prompt_optimizer"],
                 icon="zap"
             ),
             ConfigTab(
@@ -153,7 +162,7 @@ class CustomPicPlugin(BasePlugin):
             ),
             "config_version": ConfigField(
                 type=str,
-                default="3.3.0",
+                default="3.3.1",
                 description="插件配置版本号",
                 disabled=True,
                 order=2
@@ -300,7 +309,7 @@ class CustomPicPlugin(BasePlugin):
             "cartoon": ConfigField(
                 type=str,
                 default="cartoon style, anime style, colorful, vibrant colors, clean lines",
-                description="卡通风格提示词。可添加更多风格，格式: 英文名 = \"英文提示词\"",
+                description="卡通风格提示词",
                 input_type="textarea",
                 rows=3,
                 order=1
@@ -317,7 +326,7 @@ class CustomPicPlugin(BasePlugin):
             "cartoon": ConfigField(
                 type=str,
                 default="卡通",
-                description="风格中文别名，格式: 英文名 = \"中文名\"。支持多别名，用逗号分隔",
+                description="cartoon 风格的中文别名，支持多别名用逗号分隔",
                 placeholder="卡通,动漫",
                 order=1
             )
@@ -358,7 +367,30 @@ class CustomPicPlugin(BasePlugin):
                 order=1
             )
         },
-        "models": {},
+        "prompt_optimizer": {
+            "enabled": ConfigField(
+                type=bool,
+                default=True,
+                description="是否启用提示词优化器。开启后会使用 MaiBot 主 LLM 将用户描述优化为专业英文提示词",
+                order=1
+            ),
+            "hint": ConfigField(
+                type=str,
+                default="优化器会自动将中文描述翻译并优化为专业的英文绘画提示词，提升生成效果。关闭后将直接使用用户原始描述。",
+                description="功能说明",
+                disabled=True,
+                order=2
+            )
+        },
+        "models": {
+            "hint": ConfigField(
+                type=str,
+                default="添加更多模型：编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
+                description="配置说明",
+                disabled=True,
+                order=1
+            )
+        },
         # 基础模型配置模板
         "models.model1": {
             "name": ConfigField(
@@ -387,8 +419,8 @@ class CustomPicPlugin(BasePlugin):
             "format": ConfigField(
                 type=str,
                 default="openai",
-                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，comfyui=ComfyUI，mengyuai=梦羽AI",
-                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"],
+                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，mengyuai=梦羽AI，zai=Zai(Gemini转发)",
+                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "mengyuai", "zai"],
                 order=4
             ),
             "model": ConfigField(
@@ -473,11 +505,9 @@ class CustomPicPlugin(BasePlugin):
             "auto_recall_delay": ConfigField(
                 type=int,
                 default=0,
-                description="自动撤回延时（秒）。大于0时启用撤回，0或不填则不撤回",
+                description="自动撤回延时（秒）。大于0时启用撤回，0表示不撤回。需先在「自动撤回配置」中开启总开关",
                 min=0,
                 max=120,
-                depends_on="auto_recall.enabled",
-                depends_value=True,
                 order=16
             ),
         }

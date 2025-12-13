@@ -14,7 +14,7 @@ from .api_clients import get_client_class
 from .api_clients import get_client_class
 from .image_utils import ImageProcessor
 from .cache_manager import CacheManager
-from .size_utils import validate_image_size, get_image_size
+from .size_utils import validate_image_size
 from .runtime_state import runtime_state
 from .prompt_optimizer import optimize_prompt
 
@@ -85,14 +85,13 @@ class Custom_Pic_Action(BaseAction):
 
     # 动作参数定义（简化版，提示词优化由独立模块处理）
     action_parameters = {
-        "description": "从用户消息中提取的图片描述文本（例如：用户说'画一只小猫'，则填写'一只小猫'）。必填参数。",
-        "description": "从用户消息中提取的图片描述文本（例如：用户说'画一只小猫'，则填写'一只小猫'）。必填参数。",
-        "model_id": "要使用的模型ID（如model1、model2、model3等，默认使用default_model配置的模型）",
-        "strength": "图生图强度，0.1-1.0之间，值越高变化越大（仅图生图时使用，可选，默认0.7）",
-        "size": "图片尺寸，格式为宽x高（宽高范围：64-4096），如512x512、1024x1024、1024x1536、1920x1080等。请根据用户描述的内容类型智能判断合适的尺寸和比例：人物肖像适合竖图（如1024x1536）、风景适合横图（如1920x1080）、头像适合方图（如1024x1024）。你可以在64-4096范围内灵活选择任何合理的尺寸，不限于示例。自拍模式必需填写；其他情况强烈推荐填写，有助于生成更符合预期的图片效果",
-        "selfie_mode": "是否启用自拍模式（true/false，可选，默认false）。启用后会自动添加自拍场景和手部动作",
-        "selfie_style": "自拍风格，可选值：standard（标准自拍，适用于户外或无镜子场景），mirror（对镜自拍，适用于有镜子的室内场景）。仅在selfie_mode=true时生效，可选，默认standard",
-        "free_hand_action": "自由手部动作描述（英文）。如果指定此参数，将使用此动作而不是随机生成。仅在selfie_mode=true时生效，可选"
+        "description": "用户想要画的内容描述（中文或英文均可，系统会自动优化为专业提示词）。必填参数。",
+        "model_id": "要使用的模型ID（如model1、model2等），可选，默认使用配置的默认模型",
+        "strength": "图生图强度，0.1-1.0，值越高变化越大。仅图生图时使用，可选，默认0.7",
+        "size": "图片尺寸，格式为宽x高（如1024x1024、1024x1536）。根据内容选择：人物肖像用竖图、风景用横图、头像用方图。可选",
+        "selfie_mode": "是否启用自拍模式（true/false），可选，默认false",
+        "selfie_style": "自拍风格：standard（标准）或 mirror（对镜），仅selfie_mode=true时生效，可选",
+        "free_hand_action": "自定义手部动作描述（英文），仅selfie_mode=true时生效，可选"
     }
 
     # 动作使用场景
@@ -121,13 +120,6 @@ class Custom_Pic_Action(BaseAction):
         """执行统一图片生成动作"""
         logger.info(f"{self.log_prefix} 执行统一图片生成动作")
 
-        # 检查是否是 /dr 命令消息，如果是则跳过（由 Command 组件处理）
-        if self.action_message and self.action_message.processed_plain_text:
-            message_text = self.action_message.processed_plain_text.strip()
-            if message_text.startswith("/dr ") or message_text == "/dr":
-                logger.info(f"{self.log_prefix} 检测到 /dr 命令，跳过 Action 处理（由 Command 组件处理）")
-                return False, "跳过 /dr 命令"
-
         # 检查插件是否在当前聊天流启用
         global_enabled = self.get_config("plugin.enabled", True)
         if not runtime_state.is_plugin_enabled(self.chat_id, global_enabled):
@@ -143,17 +135,22 @@ class Custom_Pic_Action(BaseAction):
         selfie_style = self.action_data.get("selfie_style", "standard").strip().lower()
         free_hand_action = self.action_data.get("free_hand_action", "").strip()
 
-        # 参数验证和后备提取
-        if not description or len(description) > 200:  # 描述过长很可能是参数说明
-            # 尝试从action_message中提取描述
-            extracted_description = self._extract_description_from_message()
-            if extracted_description:
-                description = extracted_description
-                logger.info(f"{self.log_prefix} 从消息中提取到图片描述: {description}")
-            elif not description:
-                logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
-                await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
-                return False, "图片描述为空"
+        # 如果没有指定模型，使用运行时状态的默认模型
+        if not model_id:
+            global_default = self.get_config("generation.default_model", "model1")
+            model_id = runtime_state.get_action_default_model(self.chat_id, global_default)
+
+        # 检查模型是否在当前聊天流启用
+        if not runtime_state.is_model_enabled(self.chat_id, model_id):
+            logger.warning(f"{self.log_prefix} 模型 {model_id} 在当前聊天流已禁用")
+            await self.send_text(f"模型 {model_id} 当前不可用")
+            return False, f"模型 {model_id} 已禁用"
+
+        # 参数验证
+        if not description:
+            logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
+            await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
+            return False, "图片描述为空"
 
         # 将中文描述转换为英文提示词
         description = self._convert_to_english_prompt(description)
@@ -566,6 +563,19 @@ class Custom_Pic_Action(BaseAction):
 
         delay_seconds = model_config.get("auto_recall_delay", 0)
         if delay_seconds <= 0:
+            return
+
+        # 获取模型ID用于检查运行时撤回状态
+        model_id = None
+        models_config = self.get_config("models", {})
+        for mid, config in models_config.items():
+            if config == model_config:
+                model_id = mid
+                break
+
+        # 检查运行时撤回状态
+        if model_id and not runtime_state.is_recall_enabled(self.chat_id, model_id, global_enabled):
+            logger.info(f"{self.log_prefix} 模型 {model_id} 撤回已在当前聊天流禁用")
             return
 
         # 创建异步任务
