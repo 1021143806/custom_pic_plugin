@@ -21,11 +21,16 @@ class MengyuaiClient(BaseApiClient):
     MODEL_INDEX = {
         "default": 0,
 <<<<<<< HEAD
+<<<<<<< HEAD
         "qwen_image_edit": 16,  # Qwen Image Edit版模型，用于图生图
         "qwen_image_edit_2": 17,  # Qwen Image Edit版(服务器2)
 =======
         "qwen_image_edit": 9,  # Qwen Image Edit版模型，用于图生图
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+        "qwen_image_edit": 16,  # Qwen Image Edit版模型，用于图生图
+        "qwen_image_edit_2": 17,  # Qwen Image Edit版(服务器2)
+>>>>>>> 47bbcf8 (添加更多命令)
     }
 
     def _make_request(
@@ -80,12 +85,17 @@ class MengyuaiClient(BaseApiClient):
             # 如果有输入图片，使用Qwen Image Edit模型
             if input_image_base64:
 <<<<<<< HEAD
+<<<<<<< HEAD
                 # 使用图生图模型 (默认 model_index=16 是 Qwen Image Edit版)
                 request_data["model_index"] = model_config.get("img2img_model_index", 16)
 =======
                 # 使用图生图模型
                 request_data["model_index"] = model_config.get("img2img_model_index", 9)
 >>>>>>> b183c65 (api客户端拆分重构)
+=======
+                # 使用图生图模型 (默认 model_index=16 是 Qwen Image Edit版)
+                request_data["model_index"] = model_config.get("img2img_model_index", 16)
+>>>>>>> 47bbcf8 (添加更多命令)
 
                 # 需要提供图片URL，这里我们需要先将base64转为可访问的URL
                 # 梦羽AI要求image_source是可访问的URL
