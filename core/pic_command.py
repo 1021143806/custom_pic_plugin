@@ -22,7 +22,8 @@ class PicGenerationCommand(BaseCommand):
     # Command基本信息
     command_name = "pic_generation_command"
     command_description = "图生图命令，使用风格化提示词：/dr <风格> 或自然语言：/dr <描述>"
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<content>.+)$"
+    # 排除配置管理保留词，避免与 PicConfigCommand 和 PicStyleCommand 重复匹配
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?!list\b|models\b|config\b|set\b|reset\b|on\b|off\b|model\b|recall\b|default\b|styles\b|style\b|help\b)(?P<content>.+)$"
 
     def get_config(self, key: str, default=None):
         """覆盖get_config方法以支持动态配置"""
