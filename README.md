@@ -13,10 +13,13 @@
    - **自拍模式**：支持生成Bot角色的自拍照片，包含40+种智能手部动作库
 
 ### 🛠️ 多API格式支持
-   - **OpenAI格式**：兼容OpenAI、硅基流动、NewAPI等
+   - **OpenAI格式**：兼容OpenAI、硅基流动、Grok、NewAPI等
    - **豆包格式**：火山引擎豆包专用格式
    - **Gemini格式**：Google Gemini专用格式，支持宽高比和分辨率配置
    - **魔搭格式**：魔搭社区专用格式
+   - **砂糖云格式**：NovelAI代理，支持artist标签
+   - **梦羽AI格式**：支持多种模型索引
+   - **Zai格式**：Gemini API转发服务
 
 ### 🎨 命令式功能
    - **风格转换**：`/dr <风格>` - 快速应用预设风格（仅图生图）
@@ -26,7 +29,10 @@
    - **风格管理**：`/dr styles`、`/dr style <风格名>` - 查看风格详情
 
 ### ⚙️ 高级功能
+   - **提示词优化器**：自动将中文描述优化为专业英文提示词
    - **动态配置**：运行时切换模型，无需重启
+   - **聊天流独立配置**：每个聊天流可独立开关插件/模型/撤回
+   - **自动撤回**：支持按模型配置图片自动撤回延时
    - **风格别名**：支持中文别名，如"卡通"对应"cartoon"
    - **结果缓存**：相同参数自动复用结果
    - **调试开关**：可控制提示信息显示
@@ -53,7 +59,13 @@
    - `/dr config` - 查看当前配置
    - `/dr reset` - 重置为默认配置
 
-3. **风格管理**
+3. **管理员命令**（需在admin_users中配置）
+   - `/dr on` / `/dr off` - 启用/禁用当前聊天的插件
+   - `/dr model on|off <模型ID>` - 启用/禁用指定模型
+   - `/dr recall on|off <模型ID>` - 启用/禁用指定模型的自动撤回
+   - `/dr default <模型ID>` - 设置Action组件默认模型
+
+4. **风格管理**
    - `/dr styles` - 列出所有可用风格
    - `/dr style <风格名>` - 查看风格详情
    - `/dr help` - 显示帮助信息
@@ -87,7 +99,7 @@ enabled = true  # 是否启用插件
 name = "我的生图模型"  # 自定义名称（用于切换模型）
 base_url = "https://api.openai.com/v1"  # 根据服务商选择填写ULR
 api_key = "Bearer your_api_key_here"  # 填写你的 API 密钥（不同平台添加 key 时需要注意是否需要前缀 ‘Bearer ’。）
-format = "openai"  # openai/doubao/gemini/modelscope（填写API格式，根据平台选择）
+format = "openai"  # openai/doubao/gemini/modelscope/shatangyun/mengyuai/zai（填写API格式，根据平台选择）
 model = "dall-e-3"  # 填写你要使用的模型
 support_img2img = true  # 是否开启图生图（未启用自动转为文生图）
 ```
@@ -156,8 +168,11 @@ support_img2img = true  # 是否开启图生图（未启用自动转为文生图
 
 ### 高级配置
 - `components.enable_debug_info` - 调试信息开关
+- `components.admin_users` - 管理员用户ID列表
 - `cache.enabled` - 结果缓存开关
 - `cache.max_size` - 最大缓存数量
+- `prompt_optimizer.enabled` - 提示词优化器开关
+- `auto_recall.enabled` - 自动撤回总开关
 
 ### 风格配置
 ```toml
@@ -208,11 +223,30 @@ oil_painting = "油画,古典"
 4. 现在你已经拥有了一个 key 可以直接去[模型库](https://modelscope.cn/models)挑选你想要使用的生图模型了，在每个模型的详细里都会有一段教程告诉你怎么使用，我们只需要取可以使用 API 推理的模型的模型名称就好了。
 5. 在该插件的配置文件中填入你获取的 key ，选择魔搭对应的请求地址，然后填入对应的模型名称即可。剩下的相关配置根据配置文件中的注释填入。
 
+## ⚠️ 注意事项
+
+- 请妥善保管 API 密钥，不要在公开场合泄露，各平台 API 可能有调用频率限制，请注意控制使用频率，生成的图片内容受模型和提示词影响，请遵守相关平台的使用规范
+- 模型是否支持图生图请参考各平台官方文档（注：在`support_img2img = true` - 是否支持图生图中填写true/false，请自行判断）
+- Action组件、魔搭、Grok、梦羽AI和砂糖云不支持图生图功能（注：梦羽AI和砂糖云支持NSFW，请自行判断）
+
+## 贡献和反馈
+
+欢迎提交 Issue 和 Pull Request！
+
+---
+
 ## 未来计划
 
-考虑兼容 Comfyui 实现自定义生图。
+考虑兼容 ComfyUI 实现自定义生图。
 
 ## 📝 更新日志
+
+### v3.3.1
+- 🆕 **新增 API 格式**：支持砂糖云(NovelAI)、梦羽AI、Zai(Gemini转发)
+- 🧠 **提示词优化器**：自动将中文描述优化为专业英文提示词
+- 🔄 **自动撤回**：支持按模型配置图片自动撤回延时
+- 🎛️ **聊天流独立配置**：每个聊天流可独立开关插件/模型/撤回
+- 🛠️ **管理员命令**：新增 `/dr on|off`、`/dr model`、`/dr recall`、`/dr default`
 
 ### v3.2.0
 - 🎯 **新增自拍模式**：支持生成Bot角色的自拍照片，包含40+种智能手部动作库
