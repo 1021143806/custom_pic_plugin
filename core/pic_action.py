@@ -120,6 +120,13 @@ class Custom_Pic_Action(BaseAction):
         """执行统一图片生成动作"""
         logger.info(f"{self.log_prefix} 执行统一图片生成动作")
 
+        # 检查是否是 /dr 命令消息，如果是则跳过（由 Command 组件处理）
+        if self.action_message and self.action_message.processed_plain_text:
+            message_text = self.action_message.processed_plain_text.strip()
+            if message_text.startswith("/dr ") or message_text == "/dr":
+                logger.info(f"{self.log_prefix} 检测到 /dr 命令，跳过 Action 处理（由 Command 组件处理）")
+                return False, "跳过 /dr 命令"
+
         # 检查插件是否在当前聊天流启用
         global_enabled = self.get_config("plugin.enabled", True)
         if not runtime_state.is_plugin_enabled(self.chat_id, global_enabled):
