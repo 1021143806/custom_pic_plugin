@@ -9,10 +9,7 @@ from .api_clients import ApiClient
 from .image_utils import ImageProcessor
 from .runtime_state import runtime_state
 from .prompt_optimizer import optimize_prompt
-<<<<<<< HEAD
 from .size_utils import get_image_size_async
-=======
->>>>>>> 47bbcf8 (添加更多命令)
 
 logger = get_logger("pic_command")
 
@@ -25,8 +22,7 @@ class PicGenerationCommand(BaseCommand):
     # Command基本信息
     command_name = "pic_generation_command"
     command_description = "图生图命令，使用风格化提示词：/dr <风格> 或自然语言：/dr <描述>"
-    # 排除配置管理保留词，避免与 PicConfigCommand 和 PicStyleCommand 重复匹配
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?!list\b|models\b|config\b|set\b|reset\b|on\b|off\b|model\b|recall\b|default\b|styles\b|style\b|help\b)(?P<content>.+)$"
+    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<content>.+)$"
 
     def get_config(self, key: str, default=None):
         """覆盖get_config方法以支持动态配置"""
@@ -177,15 +173,7 @@ class PicGenerationCommand(BaseCommand):
                         if enable_debug:
                             await self.send_text(f"{style_name} 风格转换完成！")
                         # 安排自动撤回
-<<<<<<< HEAD
-<<<<<<< HEAD
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id)
-=======
-                        await self._schedule_auto_recall_for_recent_message(model_config)
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                        await self._schedule_auto_recall_for_recent_message(model_config, model_id)
->>>>>>> 47bbcf8 (添加更多命令)
                         return True, "图生图命令执行成功", True
                     else:
                         await self.send_text("图片发送失败")
@@ -202,15 +190,7 @@ class PicGenerationCommand(BaseCommand):
                                 if enable_debug:
                                     await self.send_text(f"{style_name} 风格转换完成！")
                                 # 安排自动撤回
-<<<<<<< HEAD
-<<<<<<< HEAD
                                 await self._schedule_auto_recall_for_recent_message(model_config, model_id)
-=======
-                                await self._schedule_auto_recall_for_recent_message(model_config)
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                                await self._schedule_auto_recall_for_recent_message(model_config, model_id)
->>>>>>> 47bbcf8 (添加更多命令)
                                 return True, "图生图命令执行成功", True
                             else:
                                 await self.send_text("图片发送失败")
@@ -298,14 +278,11 @@ class PicGenerationCommand(BaseCommand):
             else:
                 logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述")
 
-<<<<<<< HEAD
         # 使用统一的尺寸处理逻辑（异步版本，支持 LLM 选择尺寸）
         image_size, llm_original_size = await get_image_size_async(
             model_config, description, None, self.log_prefix
         )
 
-=======
->>>>>>> 47bbcf8 (添加更多命令)
         if enable_debug:
             await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}...")
 
@@ -338,15 +315,7 @@ class PicGenerationCommand(BaseCommand):
                         if enable_debug:
                             await self.send_text(f"{mode_text}完成！")
                         # 安排自动撤回
-<<<<<<< HEAD
-<<<<<<< HEAD
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id)
-=======
-                        await self._schedule_auto_recall_for_recent_message(model_config)
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                        await self._schedule_auto_recall_for_recent_message(model_config, model_id)
->>>>>>> 47bbcf8 (添加更多命令)
                         return True, f"{mode_text}命令执行成功", True
                     else:
                         await self.send_text("图片发送失败")
@@ -363,15 +332,7 @@ class PicGenerationCommand(BaseCommand):
                                 if enable_debug:
                                     await self.send_text(f"{mode_text}完成！")
                                 # 安排自动撤回
-<<<<<<< HEAD
-<<<<<<< HEAD
                                 await self._schedule_auto_recall_for_recent_message(model_config, model_id)
-=======
-                                await self._schedule_auto_recall_for_recent_message(model_config)
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                                await self._schedule_auto_recall_for_recent_message(model_config, model_id)
->>>>>>> 47bbcf8 (添加更多命令)
                                 return True, f"{mode_text}命令执行成功", True
                             else:
                                 await self.send_text("图片发送失败")
@@ -514,27 +475,12 @@ class PicGenerationCommand(BaseCommand):
         except Exception as e:
             return False, str(e)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None, model_id: str = None):
-=======
-    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None):
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None, model_id: str = None):
->>>>>>> 47bbcf8 (添加更多命令)
         """安排最近发送消息的自动撤回
 
         Args:
             model_config: 当前使用的模型配置，用于检查撤回延时设置
-<<<<<<< HEAD
-<<<<<<< HEAD
             model_id: 模型ID，用于检查运行时撤回状态
-=======
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-            model_id: 模型ID，用于检查运行时撤回状态
->>>>>>> 47bbcf8 (添加更多命令)
         """
         # 检查全局开关
         global_enabled = self.get_config("auto_recall.enabled", False)
@@ -549,10 +495,6 @@ class PicGenerationCommand(BaseCommand):
         if delay_seconds <= 0:
             return
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
         # 获取 chat_id（Command 通过 message.chat_stream.stream_id 获取）
         chat_stream = self.message.chat_stream if self.message else None
         chat_id = chat_stream.stream_id if chat_stream else None
@@ -560,10 +502,6 @@ class PicGenerationCommand(BaseCommand):
             logger.warning(f"{self.log_prefix} 无法获取 chat_id，跳过自动撤回")
             return
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 47bbcf8 (添加更多命令)
         # 检查运行时撤回状态
         if model_id and not runtime_state.is_recall_enabled(chat_id, model_id, global_enabled):
             logger.info(f"{self.log_prefix} 模型 {model_id} 撤回已在当前聊天流禁用")
@@ -574,20 +512,6 @@ class PicGenerationCommand(BaseCommand):
             try:
                 # 等待足够时间让消息存储和 echo 回调完成（平台返回真实消息ID需要时间）
                 await asyncio.sleep(4)
-=======
-        # 创建异步任务
-        async def recall_task():
-            try:
-                # 等待一小段时间让消息存储和 echo 回调完成
-                await asyncio.sleep(2)
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-        # 创建异步任务
-        async def recall_task():
-            try:
-                # 等待足够时间让消息存储和 echo 回调完成（平台返回真实消息ID需要时间）
-                await asyncio.sleep(4)
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
 
                 # 查询最近发送的消息获取消息ID
                 import time as time_module
@@ -597,15 +521,7 @@ class PicGenerationCommand(BaseCommand):
                 current_time = time_module.time()
                 # 查询最近10秒内本聊天中Bot发送的消息
                 messages = message_api.get_messages_by_time_in_chat(
-<<<<<<< HEAD
-<<<<<<< HEAD
                     chat_id=chat_id,
-=======
-                    chat_id=self.chat_id,
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                    chat_id=chat_id,
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
                     start_time=current_time - 10,
                     end_time=current_time + 1,
                     limit=5,
@@ -619,10 +535,6 @@ class PicGenerationCommand(BaseCommand):
                 for msg in messages:
                     if str(msg.user_info.user_id) == bot_id:
                         # 找到Bot发送的最新消息
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
                         mid = str(msg.message_id)
                         # 只使用纯数字的消息ID（QQ平台真实ID），跳过 send_api_xxx 格式的内部ID
                         if mid.isdigit():
@@ -630,22 +542,9 @@ class PicGenerationCommand(BaseCommand):
                             break
                         else:
                             logger.debug(f"{self.log_prefix} 跳过非平台消息ID: {mid}")
-<<<<<<< HEAD
 
                 if not target_message_id:
                     logger.warning(f"{self.log_prefix} 未找到有效的平台消息ID（需要纯数字格式）")
-=======
-                        target_message_id = msg.message_id
-                        break
-
-                if not target_message_id:
-                    logger.warning(f"{self.log_prefix} 未找到要撤回的消息ID")
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-
-                if not target_message_id:
-                    logger.warning(f"{self.log_prefix} 未找到有效的平台消息ID（需要纯数字格式）")
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
                     return
 
                 logger.info(f"{self.log_prefix} 安排消息自动撤回，延时: {delay_seconds}秒，消息ID: {target_message_id}")
@@ -653,8 +552,6 @@ class PicGenerationCommand(BaseCommand):
                 # 等待指定时间后撤回
                 await asyncio.sleep(delay_seconds)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
                 # 尝试多个撤回命令名（参考 recall_manager_plugin）
                 DELETE_COMMAND_CANDIDATES = ["DELETE_MSG", "delete_msg", "RECALL_MSG", "recall_msg"]
                 recall_success = False
@@ -684,50 +581,6 @@ class PicGenerationCommand(BaseCommand):
 
                 if not recall_success:
                     logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}，已尝试所有命令")
-=======
-                # 使用 send_command 发送撤回命令
-                success = await self.send_command(
-                    command_name="delete_msg",
-                    args={"message_id": target_message_id},
-                    storage_message=False
-                )
-
-                if success:
-                    logger.info(f"{self.log_prefix} 消息自动撤回成功，消息ID: {target_message_id}")
-                else:
-                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}")
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                # 尝试多个撤回命令名（参考 recall_manager_plugin）
-                DELETE_COMMAND_CANDIDATES = ["DELETE_MSG", "delete_msg", "RECALL_MSG", "recall_msg"]
-                recall_success = False
-
-                for cmd in DELETE_COMMAND_CANDIDATES:
-                    try:
-                        result = await self.send_command(
-                            command_name=cmd,
-                            args={"message_id": str(target_message_id)},
-                            storage_message=False
-                        )
-
-                        # 检查返回结果
-                        if isinstance(result, bool) and result:
-                            recall_success = True
-                            logger.info(f"{self.log_prefix} 消息自动撤回成功，命令: {cmd}，消息ID: {target_message_id}")
-                            break
-                        elif isinstance(result, dict):
-                            status = str(result.get("status", "")).lower()
-                            if status in ("ok", "success") or result.get("retcode") == 0 or result.get("code") == 0:
-                                recall_success = True
-                                logger.info(f"{self.log_prefix} 消息自动撤回成功，命令: {cmd}，消息ID: {target_message_id}")
-                                break
-                    except Exception as e:
-                        logger.debug(f"{self.log_prefix} 撤回命令 {cmd} 失败: {e}")
-                        continue
-
-                if not recall_success:
-                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}，已尝试所有命令")
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
 
             except asyncio.CancelledError:
                 logger.debug(f"{self.log_prefix} 自动撤回任务被取消")
@@ -847,19 +700,9 @@ class PicConfigCommand(BaseCommand):
                     support_img2img = config.get("support_img2img", True)
 
                     # 标记当前使用的模型
-<<<<<<< HEAD
-                    default_mark = " ✅" if model_id == action_default else ""
-                    command_mark = " 🔧" if model_id == command_default else ""
-                    img2img_mark = " 🖼️" if support_img2img else " 📝"
-
-                    # 管理员额外标记
-                    disabled_mark = " ❌" if is_disabled else ""
-                    recall_mark = " 🔕" if model_id in recall_disabled else ""
-=======
                     default_mark = " ✅[Action默认]" if model_id == action_default else ""
                     command_mark = " 🔧[Command默认]" if model_id == command_default else ""
                     img2img_mark = " 🖼️[文/图生图]" if support_img2img else " 📝[仅文生图]"
->>>>>>> 47bbcf8 (添加更多命令)
 
                     # 管理员额外标记
                     disabled_mark = " ❌[已禁用]" if is_disabled else ""
@@ -876,16 +719,8 @@ class PicConfigCommand(BaseCommand):
                 message_lines.append("• /dr on|off - 开关插件")
                 message_lines.append("• /dr model on|off <模型ID> - 开关模型")
                 message_lines.append("• /dr recall on|off <模型ID> - 开关撤回")
-<<<<<<< HEAD
-                message_lines.append("• /dr default <模型ID> - 设置默认模型")
-                message_lines.append("• /dr set <模型ID> - 设置/dr命令模型")
-
-            # 图例说明
-            message_lines.append("\n📖 图例：✅默认 🔧/dr命令 🖼️图生图 📝仅文生图")
-=======
                 message_lines.append("• /dr default <模型ID> - 设置Action默认模型")
                 message_lines.append("• /dr set <模型ID> - 设置Command默认模型")
->>>>>>> 47bbcf8 (添加更多命令)
 
             message = "\n".join(message_lines)
             await self.send_text(message)
@@ -939,13 +774,8 @@ class PicConfigCommand(BaseCommand):
 
             await self.send_text(
                 f"✅ 当前聊天流配置已重置！\n\n"
-<<<<<<< HEAD
-                f"🎯 默认模型: {global_action_model}\n"
-                f"🔧 /dr命令模型: {global_command_model}\n"
-=======
                 f"🎯 Action默认模型: {global_action_model}\n"
                 f"🔧 Command默认模型: {global_command_model}\n"
->>>>>>> 47bbcf8 (添加更多命令)
                 f"📋 所有模型已启用\n"
                 f"🔔 所有撤回已启用\n\n"
                 f"使用 /dr config 查看当前配置"
@@ -983,15 +813,9 @@ class PicConfigCommand(BaseCommand):
             message_lines = [
                 f"⚙️ 当前聊天流配置 (ID: {chat_id[:8]}...)：\n",
                 f"🔌 插件状态: {'✅ 启用' if plugin_enabled else '❌ 禁用'}",
-<<<<<<< HEAD
-                f"🎯 默认模型: {action_model}",
-                f"   • 名称: {action_config.get('name', action_config.get('model', '未知')) if isinstance(action_config, dict) else '未知'}\n",
-                f"🔧 /dr命令模型: {command_model}",
-=======
                 f"🎯 Action默认模型: {action_model}",
                 f"   • 名称: {action_config.get('name', action_config.get('model', '未知')) if isinstance(action_config, dict) else '未知'}\n",
                 f"🔧 Command默认模型: {command_model}",
->>>>>>> 47bbcf8 (添加更多命令)
                 f"   • 名称: {command_config.get('name', command_config.get('model', '未知')) if isinstance(command_config, dict) else '未知'}",
             ]
 
@@ -1007,13 +831,8 @@ class PicConfigCommand(BaseCommand):
                 "• /dr on|off - 开关插件",
                 "• /dr model on|off <模型ID> - 开关模型",
                 "• /dr recall on|off <模型ID> - 开关撤回",
-<<<<<<< HEAD
-                "• /dr default <模型ID> - 设置默认模型",
-                "• /dr set <模型ID> - 设置/dr命令模型",
-=======
                 "• /dr default <模型ID> - 设置Action默认",
                 "• /dr set <模型ID> - 设置Command默认",
->>>>>>> 47bbcf8 (添加更多命令)
                 "• /dr reset - 重置所有配置"
             ])
 

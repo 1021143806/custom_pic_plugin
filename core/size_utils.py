@@ -7,7 +7,6 @@ from src.common.logger import get_logger
 
 logger = get_logger("pic_action")
 
-<<<<<<< HEAD
 # LLM 尺寸选择系统提示词
 SIZE_SELECTOR_SYSTEM_PROMPT = """You are an image size selector. Based on the image description, choose the most appropriate size.
 
@@ -58,22 +57,21 @@ async def select_size_with_llm(description: str, log_prefix: str = "") -> Option
             logger.warning(f"{log_prefix} 没有可用的 LLM 模型，无法选择尺寸")
             return None
 
-        # 使用 replyer 模型（首要回复模型）
-        if "replyer" not in models:
-            logger.warning(f"{log_prefix} 没有找到 replyer 模型，无法选择尺寸")
-            return None
-        model_config = models["replyer"]
+        # 优先使用 normal 模型
+        model_config = models.get("normal") or list(models.values())[0]
 
         # 构建 prompt
         full_prompt = f"{SIZE_SELECTOR_SYSTEM_PROMPT}\nInput: {description.strip()}\nOutput:"
 
         logger.info(f"{log_prefix} 使用 LLM 选择尺寸...")
 
-        # 调用 LLM（不传递 temperature 和 max_tokens，使用模型默认值）
+        # 调用 LLM
         success, response, reasoning, model_name = await llm_api.generate_with_model(
             prompt=full_prompt,
             model_config=model_config,
             request_type="plugin.size_select",
+            temperature=0.3,  # 低温度，更确定性
+            max_tokens=20,    # 尺寸很短
         )
 
         if success and response:
@@ -183,8 +181,6 @@ async def get_image_size_async(
     # 降级：使用默认尺寸
     return default_size, None
 
-=======
->>>>>>> b183c65 (api客户端拆分重构)
 
 def gcd(a: int, b: int) -> int:
     """计算最大公约数
