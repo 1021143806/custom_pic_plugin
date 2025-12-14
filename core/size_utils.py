@@ -57,21 +57,22 @@ async def select_size_with_llm(description: str, log_prefix: str = "") -> Option
             logger.warning(f"{log_prefix} 没有可用的 LLM 模型，无法选择尺寸")
             return None
 
-        # 优先使用 normal 模型
-        model_config = models.get("normal") or list(models.values())[0]
+        # 使用 replyer 模型（首要回复模型）
+        if "replyer" not in models:
+            logger.warning(f"{log_prefix} 没有找到 replyer 模型，无法选择尺寸")
+            return None
+        model_config = models["replyer"]
 
         # 构建 prompt
         full_prompt = f"{SIZE_SELECTOR_SYSTEM_PROMPT}\nInput: {description.strip()}\nOutput:"
 
         logger.info(f"{log_prefix} 使用 LLM 选择尺寸...")
 
-        # 调用 LLM
+        # 调用 LLM（不传递 temperature 和 max_tokens，使用模型默认值）
         success, response, reasoning, model_name = await llm_api.generate_with_model(
             prompt=full_prompt,
             model_config=model_config,
             request_type="plugin.size_select",
-            temperature=0.3,  # 低温度，更确定性
-            max_tokens=20,    # 尺寸很短
         )
 
         if success and response:

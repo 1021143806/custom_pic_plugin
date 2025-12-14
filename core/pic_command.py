@@ -701,13 +701,13 @@ class PicConfigCommand(BaseCommand):
                     support_img2img = config.get("support_img2img", True)
 
                     # 标记当前使用的模型
-                    default_mark = " ✅[Action默认]" if model_id == action_default else ""
-                    command_mark = " 🔧[Command默认]" if model_id == command_default else ""
-                    img2img_mark = " 🖼️[文/图生图]" if support_img2img else " 📝[仅文生图]"
+                    default_mark = " ✅" if model_id == action_default else ""
+                    command_mark = " 🔧" if model_id == command_default else ""
+                    img2img_mark = " 🖼️" if support_img2img else " 📝"
 
                     # 管理员额外标记
-                    disabled_mark = " ❌[已禁用]" if is_disabled else ""
-                    recall_mark = " 🔕[撤回关]" if model_id in recall_disabled else ""
+                    disabled_mark = " ❌" if is_disabled else ""
+                    recall_mark = " 🔕" if model_id in recall_disabled else ""
 
                     message_lines.append(
                         f"• {model_id}{default_mark}{command_mark}{img2img_mark}{disabled_mark}{recall_mark}\n"
@@ -720,8 +720,11 @@ class PicConfigCommand(BaseCommand):
                 message_lines.append("• /dr on|off - 开关插件")
                 message_lines.append("• /dr model on|off <模型ID> - 开关模型")
                 message_lines.append("• /dr recall on|off <模型ID> - 开关撤回")
-                message_lines.append("• /dr default <模型ID> - 设置Action默认模型")
-                message_lines.append("• /dr set <模型ID> - 设置Command默认模型")
+                message_lines.append("• /dr default <模型ID> - 设置默认模型")
+                message_lines.append("• /dr set <模型ID> - 设置/dr命令模型")
+
+            # 图例说明
+            message_lines.append("\n📖 图例：✅默认 🔧/dr命令 🖼️图生图 📝仅文生图")
 
             message = "\n".join(message_lines)
             await self.send_text(message)
@@ -775,8 +778,8 @@ class PicConfigCommand(BaseCommand):
 
             await self.send_text(
                 f"✅ 当前聊天流配置已重置！\n\n"
-                f"🎯 Action默认模型: {global_action_model}\n"
-                f"🔧 Command默认模型: {global_command_model}\n"
+                f"🎯 默认模型: {global_action_model}\n"
+                f"🔧 /dr命令模型: {global_command_model}\n"
                 f"📋 所有模型已启用\n"
                 f"🔔 所有撤回已启用\n\n"
                 f"使用 /dr config 查看当前配置"
@@ -814,9 +817,9 @@ class PicConfigCommand(BaseCommand):
             message_lines = [
                 f"⚙️ 当前聊天流配置 (ID: {chat_id[:8]}...)：\n",
                 f"🔌 插件状态: {'✅ 启用' if plugin_enabled else '❌ 禁用'}",
-                f"🎯 Action默认模型: {action_model}",
+                f"🎯 默认模型: {action_model}",
                 f"   • 名称: {action_config.get('name', action_config.get('model', '未知')) if isinstance(action_config, dict) else '未知'}\n",
-                f"🔧 Command默认模型: {command_model}",
+                f"🔧 /dr命令模型: {command_model}",
                 f"   • 名称: {command_config.get('name', command_config.get('model', '未知')) if isinstance(command_config, dict) else '未知'}",
             ]
 
@@ -832,8 +835,8 @@ class PicConfigCommand(BaseCommand):
                 "• /dr on|off - 开关插件",
                 "• /dr model on|off <模型ID> - 开关模型",
                 "• /dr recall on|off <模型ID> - 开关撤回",
-                "• /dr default <模型ID> - 设置Action默认",
-                "• /dr set <模型ID> - 设置Command默认",
+                "• /dr default <模型ID> - 设置默认模型",
+                "• /dr set <模型ID> - 设置/dr命令模型",
                 "• /dr reset - 重置所有配置"
             ])
 
