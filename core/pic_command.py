@@ -9,6 +9,7 @@ from .api_clients import ApiClient
 from .image_utils import ImageProcessor
 from .runtime_state import runtime_state
 from .prompt_optimizer import optimize_prompt
+from .size_utils import get_image_size_async
 
 logger = get_logger("pic_command")
 
@@ -277,6 +278,11 @@ class PicGenerationCommand(BaseCommand):
                 description = optimized_prompt
             else:
                 logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述")
+
+        # 使用统一的尺寸处理逻辑（异步版本，支持 LLM 选择尺寸）
+        image_size, llm_original_size = await get_image_size_async(
+            model_config, description, None, self.log_prefix
+        )
 
         if enable_debug:
             await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}...")
