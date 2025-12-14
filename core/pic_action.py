@@ -11,7 +11,7 @@ from src.common.logger import get_logger
 from .api_clients import get_client_class
 from .image_utils import ImageProcessor
 from .cache_manager import CacheManager
-from .size_utils import validate_image_size
+from .size_utils import validate_image_size, get_image_size
 from .runtime_state import runtime_state
 from .prompt_optimizer import optimize_prompt
 
@@ -245,15 +245,9 @@ class Custom_Pic_Action(BaseAction):
         # 获取模型配置参数
         model_name = model_config.get("model", "default-model")
         api_format = model_config.get("format", "openai")
-        enable_default_size = model_config.get("fixed_size_enabled", False)
 
-        # 保留原始的 LLM 尺寸（用于 Gemini）
-        llm_original_size = size if size else None
-
-        if enable_default_size:
-            size = None
-            logger.info(f"{self.log_prefix} 使用自定义固定大小")
-        image_size = size or model_config.get("default_size", "1024x1024")
+        # 使用统一的尺寸处理逻辑
+        image_size, llm_original_size = get_image_size(model_config, size, self.log_prefix)
 
         # 验证图片尺寸格式
         if not self._validate_image_size(image_size):
@@ -284,8 +278,8 @@ class Custom_Pic_Action(BaseAction):
             )
 
         try:
-            # 对于 Gemini 格式，将原始 LLM 尺寸添加到 model_config 中
-            if api_format == "gemini" and llm_original_size:
+            # 对于 Gemini/Zai 格式，将原始 LLM 尺寸添加到 model_config 中
+            if api_format in ("gemini", "zai") and llm_original_size:
                 model_config = dict(model_config)  # 创建副本避免修改原配置
                 model_config["_llm_original_size"] = llm_original_size
 

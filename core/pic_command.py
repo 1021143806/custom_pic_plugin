@@ -9,6 +9,7 @@ from .api_clients import ApiClient
 from .image_utils import ImageProcessor
 from .runtime_state import runtime_state
 from .prompt_optimizer import optimize_prompt
+from .size_utils import get_image_size_async
 
 logger = get_logger("pic_command")
 
@@ -134,6 +135,11 @@ class PicGenerationCommand(BaseCommand):
             await self.send_text(f"模型 {model_id} 不支持图生图")
             return False, f"模型 {model_id} 不支持图生图", True
 
+        # 使用统一的尺寸处理逻辑（异步版本，支持 LLM 选择尺寸）
+        image_size, llm_original_size = await get_image_size_async(
+            model_config, final_description, None, self.log_prefix
+        )
+
         # 显示开始信息
         if enable_debug:
             await self.send_text(f"正在使用 {model_id} 模型进行 {style_name} 风格转换...")
@@ -142,12 +148,18 @@ class PicGenerationCommand(BaseCommand):
             # 获取重试次数配置
             max_retries = self.get_config("components.max_retries", 2)
 
+            # 对于 Gemini/Zai 格式，将原始 LLM 尺寸添加到 model_config 中
+            api_format = model_config.get("format", "openai")
+            if api_format in ("gemini", "zai") and llm_original_size:
+                model_config = dict(model_config)  # 创建副本避免修改原配置
+                model_config["_llm_original_size"] = llm_original_size
+
             # 调用API客户端生成图片
             api_client = ApiClient(self)
             success, result = await api_client.generate_image(
                 prompt=final_description,
                 model_config=model_config,
-                size=model_config.get("default_size", "1024x1024"),
+                size=image_size,
                 strength=0.7,  # 默认强度
                 input_image_base64=input_image_base64,
                 max_retries=max_retries
@@ -266,6 +278,11 @@ class PicGenerationCommand(BaseCommand):
             else:
                 logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述")
 
+        # 使用统一的尺寸处理逻辑（异步版本，支持 LLM 选择尺寸）
+        image_size, llm_original_size = await get_image_size_async(
+            model_config, description, None, self.log_prefix
+        )
+
         if enable_debug:
             await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}...")
 
@@ -273,12 +290,18 @@ class PicGenerationCommand(BaseCommand):
             # 获取重试次数配置
             max_retries = self.get_config("components.max_retries", 2)
 
+            # 对于 Gemini/Zai 格式，将原始 LLM 尺寸添加到 model_config 中
+            api_format = model_config.get("format", "openai")
+            if api_format in ("gemini", "zai") and llm_original_size:
+                model_config = dict(model_config)  # 创建副本避免修改原配置
+                model_config["_llm_original_size"] = llm_original_size
+
             # 调用API客户端生成图片
             api_client = ApiClient(self)
             success, result = await api_client.generate_image(
                 prompt=description,
                 model_config=model_config,
-                size=model_config.get("default_size", "1024x1024"),
+                size=image_size,
                 strength=0.7 if is_img2img_mode else None,
                 input_image_base64=input_image_base64,
                 max_retries=max_retries
