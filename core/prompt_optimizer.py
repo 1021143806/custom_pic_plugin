@@ -49,21 +49,11 @@ class PromptOptimizer:
         if self._model_config is None:
             try:
                 models = llm_api.get_available_models()
-<<<<<<< HEAD
                 # 使用 replyer 模型（首要回复模型）
                 if "replyer" in models:
                     self._model_config = models["replyer"]
                 else:
                     logger.warning(f"{self.log_prefix} 没有找到 replyer 模型")
-=======
-                # 优先使用 normal 模型，如果没有则使用第一个可用模型
-                if "normal" in models:
-                    self._model_config = models["normal"]
-                elif models:
-                    self._model_config = list(models.values())[0]
-                else:
-                    logger.warning(f"{self.log_prefix} 没有可用的 LLM 模型")
->>>>>>> 47bbcf8 (添加更多命令)
                     return None
             except Exception as e:
                 logger.error(f"{self.log_prefix} 获取模型配置失败: {e}")
@@ -94,20 +84,11 @@ class PromptOptimizer:
 
             logger.info(f"{self.log_prefix} 开始优化提示词: {user_description[:50]}...")
 
-<<<<<<< HEAD
             # 调用 LLM（不传递 temperature 和 max_tokens，使用模型默认值）
-=======
-            # 调用 LLM
->>>>>>> 47bbcf8 (添加更多命令)
             success, response, reasoning, model_name = await llm_api.generate_with_model(
                 prompt=full_prompt,
                 model_config=model_config,
                 request_type="plugin.prompt_optimize",
-<<<<<<< HEAD
-=======
-                temperature=0.7,  # 适度创意
-                max_tokens=300,   # 提示词不需要太长
->>>>>>> 47bbcf8 (添加更多命令)
             )
 
             if success and response:
