@@ -11,13 +11,15 @@ class CacheManager:
     # 类级别的缓存存储
     _request_cache = {}  # 文生图缓存
     _img2img_cache = {}  # 图生图缓存
-    _cache_max_size = 100  # 最大缓存数量
-    _img2img_cache_max_size = 50  # 图生图缓存最大数量
     _cache_lock = Lock()  # 线程安全锁
 
     def __init__(self, action_instance):
         self.action = action_instance
         self.log_prefix = action_instance.log_prefix
+
+    def _get_max_size(self) -> int:
+        """获取最大缓存数量配置"""
+        return self.action.get_config("cache.max_size", 10)
 
     def get_cached_result(self, description: str, model: str, size: str, strength: float = None, is_img2img: bool = False) -> Optional[str]:
         """获取缓存的结果"""
@@ -52,11 +54,11 @@ class CacheManager:
                 if is_img2img:
                     cache_key = self._get_img2img_cache_key(description, model, size, strength)
                     cache_dict = self._img2img_cache
-                    max_size = self._img2img_cache_max_size
                 else:
                     cache_key = self._get_cache_key(description, model, size)
                     cache_dict = self._request_cache
-                    max_size = self._cache_max_size
+
+                max_size = self._get_max_size()
 
                 # 添加到缓存
                 cache_dict[cache_key] = result
@@ -106,11 +108,12 @@ class CacheManager:
         """获取缓存统计信息"""
         try:
             with self._cache_lock:
+                max_size = self._get_max_size()
                 return {
                     "txt2img_cache_size": len(self._request_cache),
-                    "txt2img_cache_max": self._cache_max_size,
+                    "txt2img_cache_max": max_size,
                     "img2img_cache_size": len(self._img2img_cache),
-                    "img2img_cache_max": self._img2img_cache_max_size,
+                    "img2img_cache_max": max_size,
                     "cache_enabled": self.action.get_config("cache.enabled", True)
                 }
         except Exception as e:
@@ -136,10 +139,3 @@ class CacheManager:
             for key in keys_to_remove:
                 del cache_dict[key]
 
-    @classmethod
-    def set_cache_size_limits(cls, txt2img_max: int = None, img2img_max: int = None):
-        """设置缓存大小限制"""
-        if txt2img_max is not None:
-            cls._cache_max_size = max(1, txt2img_max)
-        if img2img_max is not None:
-            cls._img2img_cache_max_size = max(1, img2img_max)

@@ -4,10 +4,12 @@
 # 忽略特定目录
 old/
 __pycache__/
+.claude
 
 # 忽略特定文件
 config.toml
 .env
+nul
 
 # 忽略特定扩展名的文件（递归）
 **/*.tmp
