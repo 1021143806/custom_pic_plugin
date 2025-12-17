@@ -126,9 +126,10 @@ class CacheManager:
         return f"txt2img_{description[:100]}|{model}|{size}"
 
     @classmethod
-    def _get_img2img_cache_key(cls, description: str, model: str, size: str, strength: float) -> str:
+    def _get_img2img_cache_key(cls, description: str, model: str, size: str, strength: float = None) -> str:
         """生成图生图缓存键"""
-        return f"img2img_{description[:50]}|{model}|{size}|{strength}"
+        strength_str = str(strength) if strength is not None else "default"
+        return f"img2img_{description[:50]}|{model}|{size}|{strength_str}"
 
     @classmethod
     def _cleanup_cache_dict(cls, cache_dict: Dict, max_size: int):
