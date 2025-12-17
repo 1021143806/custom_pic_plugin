@@ -83,6 +83,7 @@ class Custom_Pic_Action(BaseAction):
     # 动作参数定义（简化版，提示词优化由独立模块处理）
     action_parameters = {
         "description": "从用户消息中提取的图片描述文本（例如：用户说'画一只小猫'，则填写'一只小猫'）。必填参数。",
+        "description": "从用户消息中提取的图片描述文本（例如：用户说'画一只小猫'，则填写'一只小猫'）。必填参数。",
         "model_id": "要使用的模型ID（如model1、model2、model3等，默认使用default_model配置的模型）",
         "strength": "图生图强度，0.1-1.0之间，值越高变化越大（仅图生图时使用，可选，默认0.7）",
         "size": "图片尺寸，如512x512、1024x1024等（可选，不指定则使用模型默认尺寸）",
@@ -139,25 +140,14 @@ class Custom_Pic_Action(BaseAction):
         selfie_style = self.action_data.get("selfie_style", "standard").strip().lower()
         free_hand_action = self.action_data.get("free_hand_action", "").strip()
 
-        # 如果没有指定模型，使用运行时状态的默认模型
-        if not model_id:
-            global_default = self.get_config("generation.default_model", "model1")
-            model_id = runtime_state.get_action_default_model(self.chat_id, global_default)
-
-        # 检查模型是否在当前聊天流启用
-        if not runtime_state.is_model_enabled(self.chat_id, model_id):
-            logger.warning(f"{self.log_prefix} 模型 {model_id} 在当前聊天流已禁用")
-            await self.send_text(f"模型 {model_id} 当前不可用")
-            return False, f"模型 {model_id} 已禁用"
-
         # 参数验证和后备提取
-        if not description:
+        if not description or len(description) > 200:  # 描述过长很可能是参数说明
             # 尝试从action_message中提取描述
             extracted_description = self._extract_description_from_message()
             if extracted_description:
                 description = extracted_description
                 logger.info(f"{self.log_prefix} 从消息中提取到图片描述: {description}")
-            else:
+            elif not description:
                 logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
                 await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
                 return False, "图片描述为空"
@@ -519,153 +509,6 @@ class Custom_Pic_Action(BaseAction):
         logger.info(f"{self.log_prefix} 自拍模式最终提示词: {final_prompt[:200]}...")
         return final_prompt
 
-    def _get_selfie_reference_image(self) -> Optional[str]:
-        """获取自拍参考图片的base64编码
-
-        Returns:
-            图片的base64编码，如果不存在则返回None
-        """
-        image_path = self.get_config("selfie.reference_image_path", "").strip()
-        if not image_path:
-            return None
-
-        try:
-            # 处理相对路径（相对于插件目录）
-            if not os.path.isabs(image_path):
-                plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                image_path = os.path.join(plugin_dir, image_path)
-
-            if os.path.exists(image_path):
-                with open(image_path, 'rb') as f:
-                    image_data = f.read()
-                image_base64 = base64.b64encode(image_data).decode('utf-8')
-                logger.info(f"{self.log_prefix} 从文件加载自拍参考图片: {image_path}")
-                return image_base64
-            else:
-                logger.warning(f"{self.log_prefix} 自拍参考图片文件不存在: {image_path}")
-                return None
-        except Exception as e:
-            logger.error(f"{self.log_prefix} 加载自拍参考图片失败: {e}")
-            return None
-
-    async def _schedule_auto_recall_for_recent_message(self, model_config: Dict[str, Any] = None):
-        """安排最近发送消息的自动撤回
-
-        通过查询数据库获取最近发送的消息ID，然后安排撤回任务
-
-        Args:
-            model_config: 当前使用的模型配置，用于检查撤回延时设置
-        """
-        # 检查全局开关
-        global_enabled = self.get_config("auto_recall.enabled", False)
-        if not global_enabled:
-            return
-
-        # 检查模型的撤回延时，大于0才启用
-        if not model_config:
-            return
-
-        delay_seconds = model_config.get("auto_recall_delay", 0)
-        if delay_seconds <= 0:
-            return
-
-        # 获取模型ID用于检查运行时撤回状态
-        model_id = None
-        models_config = self.get_config("models", {})
-        for mid, config in models_config.items():
-            # 通过模型名称匹配，避免字典比较问题
-            if config.get("model") == model_config.get("model"):
-                model_id = mid
-                break
-
-        # 检查运行时撤回状态
-        if model_id and not runtime_state.is_recall_enabled(self.chat_id, model_id, global_enabled):
-            logger.info(f"{self.log_prefix} 模型 {model_id} 撤回已在当前聊天流禁用")
-            return
-
-        # 创建异步任务
-        async def recall_task():
-            try:
-                # 等待足够时间让消息存储和 echo 回调完成（平台返回真实消息ID需要时间）
-                await asyncio.sleep(4)
-
-                # 查询最近发送的消息获取消息ID
-                import time as time_module
-                from src.plugin_system.apis import message_api
-                from src.config.config import global_config
-
-                current_time = time_module.time()
-                # 查询最近10秒内本聊天中Bot发送的消息
-                messages = message_api.get_messages_by_time_in_chat(
-                    chat_id=self.chat_id,
-                    start_time=current_time - 10,
-                    end_time=current_time + 1,
-                    limit=5,
-                    limit_mode="latest"
-                )
-
-                # 找到Bot发送的图片消息
-                bot_id = str(global_config.bot.qq_account)
-                target_message_id = None
-
-                for msg in messages:
-                    if str(msg.user_info.user_id) == bot_id:
-                        # 找到Bot发送的最新消息
-                        mid = str(msg.message_id)
-                        # 只使用纯数字的消息ID（QQ平台真实ID），跳过 send_api_xxx 格式的内部ID
-                        if mid.isdigit():
-                            target_message_id = mid
-                            break
-                        else:
-                            logger.debug(f"{self.log_prefix} 跳过非平台消息ID: {mid}")
-
-                if not target_message_id:
-                    logger.warning(f"{self.log_prefix} 未找到有效的平台消息ID（需要纯数字格式）")
-                    return
-
-                logger.info(f"{self.log_prefix} 安排消息自动撤回，延时: {delay_seconds}秒，消息ID: {target_message_id}")
-
-                # 等待指定时间后撤回
-                await asyncio.sleep(delay_seconds)
-
-                # 尝试多个撤回命令名（参考 recall_manager_plugin）
-                DELETE_COMMAND_CANDIDATES = ["DELETE_MSG", "delete_msg", "RECALL_MSG", "recall_msg"]
-                recall_success = False
-
-                for cmd in DELETE_COMMAND_CANDIDATES:
-                    try:
-                        result = await self.send_command(
-                            command_name=cmd,
-                            args={"message_id": str(target_message_id)},
-                            storage_message=False
-                        )
-
-                        # 检查返回结果
-                        if isinstance(result, bool) and result:
-                            recall_success = True
-                            logger.info(f"{self.log_prefix} 消息自动撤回成功，命令: {cmd}，消息ID: {target_message_id}")
-                            break
-                        elif isinstance(result, dict):
-                            status = str(result.get("status", "")).lower()
-                            if status in ("ok", "success") or result.get("retcode") == 0 or result.get("code") == 0:
-                                recall_success = True
-                                logger.info(f"{self.log_prefix} 消息自动撤回成功，命令: {cmd}，消息ID: {target_message_id}")
-                                break
-                    except Exception as e:
-                        logger.debug(f"{self.log_prefix} 撤回命令 {cmd} 失败: {e}")
-                        continue
-
-                if not recall_success:
-                    logger.warning(f"{self.log_prefix} 消息自动撤回失败，消息ID: {target_message_id}，已尝试所有命令")
-
-            except asyncio.CancelledError:
-                logger.debug(f"{self.log_prefix} 自动撤回任务被取消")
-            except Exception as e:
-                logger.error(f"{self.log_prefix} 自动撤回失败: {e}")
-
-        # 启动后台任务
-        asyncio.create_task(recall_task())
-
     def _extract_description_from_message(self) -> str:
         """从用户消息中提取图片描述
         
@@ -760,7 +603,7 @@ class Custom_Pic_Action(BaseAction):
             '孩子': 'child', '宝宝': 'baby',
             
             # 场景
-            '海边': 'beach', '海滩': 'ocean', '森林': 'forest', '花园': 'garden',
+            '海边': 'beach', '海边': 'ocean', '森林': 'forest', '花园': 'garden',
             '房间': 'room', '天空': 'sky', '月亮': 'moon', '太阳': 'sun',
             
             # 动作
@@ -783,6 +626,8 @@ class Custom_Pic_Action(BaseAction):
             
         # 清理多余空格并添加适当的分隔
         words = words.replace('  ', ' ').strip()
+        # 确保英文单词之间有适当空格
+        words = words.replace('a ', 'a ').replace(' in ', ' in ').replace(' on ', ' on ').replace(' under ', ' under ')
             
         # 如果还有中文字符，使用基础处理
         if any('\u4e00' <= char <= '\u9fff' for char in words):
