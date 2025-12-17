@@ -181,81 +181,36 @@ class EnhancedConfigManager:
         4. 递归处理嵌套字典
         
         Args:
-            old_config: 旧配置（用户的自定义配置）
-            new_config: 新配置（默认配置模板）
+            old_config: 旧配置
+            new_config: 新配置（通常来自模板或schema）
             
         Returns:
             Dict[str, Any]: 合并后的配置
         """
-        def _merge_dicts(base: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
-            """递归合并字典，保留用户自定义值"""
-            result = base.copy()
+        def _merge_dicts(target: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:
+            """递归合并字典"""
+            result = target.copy()
             
-            for key, user_value in user.items():
+            for key, source_value in source.items():
                 # 跳过版本字段
                 if key in ["version", "config_version"]:
                     continue
                     
                 if key in result:
-                    base_value = result[key]
-                    if isinstance(user_value, dict) and isinstance(base_value, dict):
-                        # 递归合并嵌套字典
-                        result[key] = _merge_dicts(base_value, user_value)
+                    target_value = result[key]
+                    if isinstance(source_value, dict) and isinstance(target_value, dict):
+                        result[key] = _merge_dicts(target_value, source_value)
                     else:
-                        # 保留用户的自定义值
-                        result[key] = user_value
+                        # 保留用户的自定义值（来自source）
+                        result[key] = source_value
                 else:
                     # 旧配置中有但新配置中没有的键，保留但记录
-                    result[key] = user_value
+                    result[key] = source_value
                     print(f"[EnhancedConfigManager] 保留已移除的配置项: {key}")
             
             return result
         
         return _merge_dicts(new_config, old_config)
-    
-    def _version_compare(self, version1: str, version2: str) -> int:
-        """
-        比较两个版本号
-        
-        Args:
-            version1: 第一个版本号
-            version2: 第二个版本号
-            
-        Returns:
-            int: -1 如果 version1 < version2
-                 0 如果 version1 == version2
-                 1 如果 version1 > version2
-        """
-        def _v_to_tuple(v):
-            # 移除 'v' 前缀并分割
-            v = v.lstrip('v')
-            # 分割主版本、次版本、修订版本
-            parts = v.split('.')
-            # 转换为整数，忽略非数字部分
-            result = []
-            for part in parts:
-                # 提取数字部分
-                num = ''
-                for ch in part:
-                    if ch.isdigit():
-                        num += ch
-                    else:
-                        break
-                result.append(int(num) if num else 0)
-            # 补齐到3位
-            while len(result) < 3:
-                result.append(0)
-            return tuple(result[:3])
-        
-        v1_tuple = _v_to_tuple(version1)
-        v2_tuple = _v_to_tuple(version2)
-        
-        if v1_tuple < v2_tuple:
-            return -1
-        elif v1_tuple > v2_tuple:
-            return 1
-        else:
-            return 0
     
     def get_config_version(self, config: Dict[str, Any]) -> str:
         """
@@ -359,12 +314,6 @@ class EnhancedConfigManager:
         # 如果版本相同，不需要更新
         if current_version == expected_version:
             print(f"[EnhancedConfigManager] 配置版本已是最新 v{current_version}")
-            return old_config
-        
-        # 如果配置版本高于期望版本，发出警告但不降级
-        if self._version_compare(current_version, expected_version) > 0:
-            print(f"[EnhancedConfigManager] 警告: 配置版本 v{current_version} 高于期望版本 v{expected_version}")
-            print(f"[EnhancedConfigManager] 将保持当前配置，不进行降级更新")
             return old_config
         
         print(f"[EnhancedConfigManager] 检测到配置版本需要更新: 当前=v{current_version}, 期望=v{expected_version}")

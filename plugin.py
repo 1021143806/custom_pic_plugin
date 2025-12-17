@@ -1,5 +1,7 @@
 from typing import List, Tuple, Type, Dict, Any
 import os
+from typing import List, Tuple, Type, Dict, Any
+import os
 
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.base.component_types import ComponentInfo
@@ -14,7 +16,6 @@ from src.plugin_system.base.config_types import (
 from .core.pic_action import Custom_Pic_Action
 from .core.pic_command import PicGenerationCommand, PicConfigCommand, PicStyleCommand
 from .core.config_manager import EnhancedConfigManager
-
 
 @register_plugin
 class CustomPicPlugin(BasePlugin):
@@ -491,22 +492,7 @@ class CustomPicPlugin(BasePlugin):
             "artist": ConfigField(
                 type=str,
                 default="",
-                description="艺术家风格标签（砂糖云专用）。留空则不添加",
-                order=14
-            ),
-            "support_img2img": ConfigField(
-                type=bool,
-                default=True,
-                description="该模型是否支持图生图功能，请根据API文档自行判断。设为false时会自动降级为文生图",
-                order=15
-            ),
-            "auto_recall_delay": ConfigField(
-                type=int,
-                default=0,
-                description="自动撤回延时（秒）。大于0时启用撤回，0表示不撤回。需先在「自动撤回配置」中开启总开关",
-                min=0,
-                max=120,
-                order=16
+                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform'"
             ),
         }
     }
