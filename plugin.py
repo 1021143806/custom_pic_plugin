@@ -1,7 +1,5 @@
 from typing import List, Tuple, Type, Dict, Any
 import os
-from typing import List, Tuple, Type, Dict, Any
-import os
 
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.base.component_types import ComponentInfo
@@ -16,7 +14,6 @@ from src.plugin_system.base.config_types import (
 from .core.pic_action import Custom_Pic_Action
 from .core.pic_command import PicGenerationCommand, PicConfigCommand, PicStyleCommand
 from .core.config_manager import EnhancedConfigManager
-
 
 @register_plugin
 class CustomPicPlugin(BasePlugin):
@@ -539,15 +536,11 @@ class CustomPicPlugin(BasePlugin):
         # 初始化增强配置管理器
         self.enhanced_config_manager = EnhancedConfigManager(plugin_dir, self.config_file_name)
         
-        # 检查并更新配置（如果需要），传入原始配置
-        self._enhance_config_management(original_config)
+        # 检查并更新配置（如果需要）
+        self._enhance_config_management()
     
-    def _enhance_config_management(self, original_config=None):
-        """增强配置管理：备份、版本检查、智能合并
-        
-        Args:
-            original_config: 从磁盘读取的原始配置（在父类初始化前读取），用于恢复用户自定义值
-        """
+    def _enhance_config_management(self):
+        """增强配置管理：备份、版本检查、智能合并"""
         # 获取期望的配置版本
         expected_version = self._get_expected_config_version()
         
@@ -557,47 +550,11 @@ class CustomPicPlugin(BasePlugin):
         # 生成默认配置结构
         default_config = self._generate_default_config_from_schema()
         
-        # 确定要使用的旧配置：优先使用传入的原始配置，其次从备份文件加载
-        old_config = original_config
-        if old_config is None:
-            old_dir = os.path.join(self.plugin_dir, "old")
-            if os.path.exists(old_dir):
-                import toml
-                # 查找最新的备份文件（按时间戳排序），包括 auto_backup、new_backup 和 backup 文件
-                backup_files = []
-                for fname in os.listdir(old_dir):
-                    if (fname.startswith(self.config_file_name + ".backup_") or
-                        fname.startswith(self.config_file_name + ".new_backup_") or
-                        fname.startswith(self.config_file_name + ".auto_backup_")) and fname.endswith(".toml"):
-                        backup_files.append(fname)
-                if backup_files:
-                    # 按时间戳排序（文件名中包含 _YYYYMMDD_HHMMSS）
-                    backup_files.sort(reverse=True)
-                    latest_backup = os.path.join(old_dir, backup_files[0])
-                    try:
-                        with open(latest_backup, "r", encoding="utf-8") as f:
-                            old_config = toml.load(f)
-                        print(f"[CustomPicPlugin] 从备份文件加载原始配置: {backup_files[0]}")
-                    except Exception as e:
-                        print(f"[CustomPicPlugin] 加载备份文件失败: {e}")
-        
-        # 每次启动时创建备份（无论版本是否相同）
-        # 加载当前配置文件以获取版本
-        current_config = self.enhanced_config_manager.load_config()
-        if current_config:
-            current_version = self.enhanced_config_manager.get_config_version(current_config)
-            print(f"[CustomPicPlugin] 当前配置版本 v{current_version}，创建启动备份")
-            self.enhanced_config_manager.backup_config(current_version)
-        else:
-            print(f"[CustomPicPlugin] 配置文件不存在，跳过启动备份")
-        
         # 使用增强配置管理器检查并更新配置
-        # 传入旧配置（如果存在）以恢复用户自定义值
         updated_config = self.enhanced_config_manager.update_config_if_needed(
             expected_version=expected_version,
             default_config=default_config,
-            schema=schema_for_manager,
-            old_config=old_config
+            schema=schema_for_manager
         )
         
         # 如果配置有更新，更新self.config
