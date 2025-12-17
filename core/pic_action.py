@@ -139,7 +139,6 @@ class Custom_Pic_Action(BaseAction):
         selfie_style = self.action_data.get("selfie_style", "standard").strip().lower()
         free_hand_action = self.action_data.get("free_hand_action", "").strip()
 
-<<<<<<< HEAD
         # 如果没有指定模型，使用运行时状态的默认模型
         if not model_id:
             global_default = self.get_config("generation.default_model", "model1")
@@ -152,31 +151,17 @@ class Custom_Pic_Action(BaseAction):
             return False, f"模型 {model_id} 已禁用"
 
         # 参数验证和后备提取
-        if not description or len(description) > 200:  # 描述过长很可能是参数说明
+        if not description:
             # 尝试从action_message中提取描述
             extracted_description = self._extract_description_from_message()
             if extracted_description:
                 description = extracted_description
                 logger.info(f"{self.log_prefix} 从消息中提取到图片描述: {description}")
-            elif not description:
+            else:
                 logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
                 await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
                 return False, "图片描述为空"
 
-=======
-        # 参数验证和后备提取
-        if not description or len(description) > 200:  # 描述过长很可能是参数说明
-            # 尝试从action_message中提取描述
-            extracted_description = self._extract_description_from_message()
-            if extracted_description:
-                description = extracted_description
-                logger.info(f"{self.log_prefix} 从消息中提取到图片描述: {description}")
-            elif not description:
-                logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
-                await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
-                return False, "图片描述为空"
-
->>>>>>> a212231 (优化图片描述提取与转换逻辑，增加描述长度验证，确保生成高质量英文提示词)
         # 将中文描述转换为英文提示词
         description = self._convert_to_english_prompt(description)
         
@@ -534,7 +519,6 @@ class Custom_Pic_Action(BaseAction):
         logger.info(f"{self.log_prefix} 自拍模式最终提示词: {final_prompt[:200]}...")
         return final_prompt
 
-<<<<<<< HEAD
     def _get_selfie_reference_image(self) -> Optional[str]:
         """获取自拍参考图片的base64编码
 
@@ -589,7 +573,8 @@ class Custom_Pic_Action(BaseAction):
         model_id = None
         models_config = self.get_config("models", {})
         for mid, config in models_config.items():
-            if config == model_config:
+            # 通过模型名称匹配，避免字典比较问题
+            if config.get("model") == model_config.get("model"):
                 model_id = mid
                 break
 
@@ -681,8 +666,6 @@ class Custom_Pic_Action(BaseAction):
         # 启动后台任务
         asyncio.create_task(recall_task())
 
-=======
->>>>>>> a212231 (优化图片描述提取与转换逻辑，增加描述长度验证，确保生成高质量英文提示词)
     def _extract_description_from_message(self) -> str:
         """从用户消息中提取图片描述
         
@@ -777,7 +760,7 @@ class Custom_Pic_Action(BaseAction):
             '孩子': 'child', '宝宝': 'baby',
             
             # 场景
-            '海边': 'beach', '海边': 'ocean', '森林': 'forest', '花园': 'garden',
+            '海边': 'beach', '海滩': 'ocean', '森林': 'forest', '花园': 'garden',
             '房间': 'room', '天空': 'sky', '月亮': 'moon', '太阳': 'sun',
             
             # 动作
@@ -800,8 +783,6 @@ class Custom_Pic_Action(BaseAction):
             
         # 清理多余空格并添加适当的分隔
         words = words.replace('  ', ' ').strip()
-        # 确保英文单词之间有适当空格
-        words = words.replace('a ', 'a ').replace(' in ', ' in ').replace(' on ', ' on ').replace(' under ', ' under ')
             
         # 如果还有中文字符，使用基础处理
         if any('\u4e00' <= char <= '\u9fff' for char in words):
