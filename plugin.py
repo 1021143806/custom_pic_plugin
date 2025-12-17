@@ -1,4 +1,5 @@
-from typing import List, Tuple, Type
+from typing import List, Tuple, Type, Dict, Any
+import os
 
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.base.component_types import ComponentInfo
@@ -12,6 +13,7 @@ from src.plugin_system.base.config_types import (
 
 from .core.pic_action import Custom_Pic_Action
 from .core.pic_command import PicGenerationCommand, PicConfigCommand, PicStyleCommand
+from .core.config_manager import EnhancedConfigManager
 
 
 @register_plugin
@@ -508,6 +510,90 @@ class CustomPicPlugin(BasePlugin):
             ),
         }
     }
+
+    def __init__(self, plugin_dir: str):
+        """初始化插件，集成增强配置管理器"""
+        # 先调用父类初始化，这会加载配置
+        super().__init__(plugin_dir)
+        
+        # 初始化增强配置管理器
+        self.enhanced_config_manager = EnhancedConfigManager(plugin_dir, self.config_file_name)
+        
+        # 检查并更新配置（如果需要）
+        self._enhance_config_management()
+    
+    def _enhance_config_management(self):
+        """增强配置管理：备份、版本检查、智能合并"""
+        # 获取期望的配置版本
+        expected_version = self._get_expected_config_version()
+        
+        # 将config_schema转换为EnhancedConfigManager需要的格式
+        schema_for_manager = self._convert_schema_for_manager()
+        
+        # 生成默认配置结构
+        default_config = self._generate_default_config_from_schema()
+        
+        # 使用增强配置管理器检查并更新配置
+        updated_config = self.enhanced_config_manager.update_config_if_needed(
+            expected_version=expected_version,
+            default_config=default_config,
+            schema=schema_for_manager
+        )
+        
+        # 如果配置有更新，更新self.config
+        if updated_config and updated_config != self.config:
+            self.config = updated_config
+            # 同时更新enable_plugin状态
+            if "plugin" in self.config and "enabled" in self.config["plugin"]:
+                self.enable_plugin = self.config["plugin"]["enabled"]
+    
+    def _get_expected_config_version(self) -> str:
+        """获取期望的配置版本号"""
+        if "plugin" in self.config_schema and isinstance(self.config_schema["plugin"], dict):
+            config_version_field = self.config_schema["plugin"].get("config_version")
+            if isinstance(config_version_field, ConfigField):
+                return config_version_field.default
+        return "1.0.0"
+    
+    def _convert_schema_for_manager(self) -> Dict[str, Any]:
+        """将ConfigField格式的schema转换为EnhancedConfigManager需要的格式"""
+        schema_for_manager = {}
+        
+        for section, fields in self.config_schema.items():
+            if not isinstance(fields, dict):
+                continue
+                
+            section_schema = {}
+            for field_name, field in fields.items():
+                if isinstance(field, ConfigField):
+                    section_schema[field_name] = {
+                        "description": field.description,
+                        "default": field.default,
+                        "required": field.required,
+                        "choices": field.choices if field.choices else None,
+                        "example": field.example
+                    }
+            
+            schema_for_manager[section] = section_schema
+        
+        return schema_for_manager
+    
+    def _generate_default_config_from_schema(self) -> Dict[str, Any]:
+        """从schema生成默认配置结构"""
+        default_config = {}
+        
+        for section, fields in self.config_schema.items():
+            if not isinstance(fields, dict):
+                continue
+                
+            section_config = {}
+            for field_name, field in fields.items():
+                if isinstance(field, ConfigField):
+                    section_config[field_name] = field.default
+            
+            default_config[section] = section_config
+        
+        return default_config
 
     def get_plugin_components(self) -> List[Tuple[ComponentInfo, Type]]:
         """返回插件包含的组件列表"""
