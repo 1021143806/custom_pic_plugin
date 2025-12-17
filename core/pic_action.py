@@ -82,13 +82,13 @@ class Custom_Pic_Action(BaseAction):
 
     # 动作参数定义（简化版，提示词优化由独立模块处理）
     action_parameters = {
-        "description": "用户想要画的内容描述（中文或英文均可，系统会自动优化为专业提示词）。必填参数。",
-        "model_id": "要使用的模型ID（如model1、model2等），可选，默认使用配置的默认模型",
-        "strength": "图生图强度，0.1-1.0，值越高变化越大。仅图生图时使用，可选，默认0.7",
-        "size": "图片尺寸，格式为宽x高（如1024x1024、1024x1536）。根据内容选择：人物肖像用竖图、风景用横图、头像用方图。可选",
-        "selfie_mode": "是否启用自拍模式（true/false），可选，默认false",
-        "selfie_style": "自拍风格：standard（标准）或 mirror（对镜），仅selfie_mode=true时生效，可选",
-        "free_hand_action": "自定义手部动作描述（英文），仅selfie_mode=true时生效，可选"
+        "description": "从用户消息中提取的图片描述文本（例如：用户说'画一只小猫'，则填写'一只小猫'）。必填参数。",
+        "model_id": "要使用的模型ID（如model1、model2、model3等，默认使用default_model配置的模型）",
+        "strength": "图生图强度，0.1-1.0之间，值越高变化越大（仅图生图时使用，可选，默认0.7）",
+        "size": "图片尺寸，如512x512、1024x1024等（可选，不指定则使用模型默认尺寸）",
+        "selfie_mode": "是否启用自拍模式（true/false，可选，默认false）。启用后会自动添加自拍场景和手部动作",
+        "selfie_style": "自拍风格，可选值：standard（标准自拍，适用于户外或无镜子场景），mirror（对镜自拍，适用于有镜子的室内场景）。仅在selfie_mode=true时生效，可选，默认standard",
+        "free_hand_action": "自由手部动作描述（英文）。如果指定此参数，将使用此动作而不是随机生成。仅在selfie_mode=true时生效，可选"
     }
 
     # 动作使用场景
@@ -150,12 +150,21 @@ class Custom_Pic_Action(BaseAction):
             await self.send_text(f"模型 {model_id} 当前不可用")
             return False, f"模型 {model_id} 已禁用"
 
-        # 参数验证
-        if not description:
-            logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
-            await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
-            return False, "图片描述为空"
+        # 参数验证和后备提取
+        if not description or len(description) > 200:  # 描述过长很可能是参数说明
+            # 尝试从action_message中提取描述
+            extracted_description = self._extract_description_from_message()
+            if extracted_description:
+                description = extracted_description
+                logger.info(f"{self.log_prefix} 从消息中提取到图片描述: {description}")
+            elif not description:
+                logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
+                await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
+                return False, "图片描述为空"
 
+        # 将中文描述转换为英文提示词
+        description = self._convert_to_english_prompt(description)
+        
         # 清理和验证描述
         if len(description) > 1000:
             description = description[:1000]
@@ -655,3 +664,137 @@ class Custom_Pic_Action(BaseAction):
 
         # 启动后台任务
         asyncio.create_task(recall_task())
+
+    def _extract_description_from_message(self) -> str:
+        """从用户消息中提取图片描述
+        
+        Returns:
+            str: 提取的图片描述，如果无法提取则返回空字符串
+        """
+        if not self.action_message:
+            return ""
+            
+        # 获取消息文本
+        message_text = (self.action_message.processed_plain_text or
+                       self.action_message.display_message or
+                       self.action_message.raw_message or "").strip()
+        
+        if not message_text:
+            return ""
+            
+        import re
+        
+        # 移除常见的画图相关前缀
+        patterns_to_remove = [
+            r'^画',           # "画"
+            r'^绘制',         # "绘制"
+            r'^生成图片',     # "生成图片"
+            r'^画图',         # "画图"
+            r'^帮我画',       # "帮我画"
+            r'^请画',         # "请画"
+            r'^能不能画',     # "能不能画"
+            r'^可以画',       # "可以画"
+            r'^画一个',       # "画一个"
+            r'^画一只',       # "画一只"
+            r'^画张',         # "画张"
+            r'^画幅',         # "画幅"
+            r'^图[：:]',      # "图："或"图:"
+            r'^生成图片[：:]', # "生成图片："或"生成图片:"
+            r'^[：:]',        # 单独的冒号
+        ]
+        
+        cleaned_text = message_text
+        for pattern in patterns_to_remove:
+            cleaned_text = re.sub(pattern, '', cleaned_text, flags=re.IGNORECASE)
+        
+        # 移除常见的后缀
+        suffix_patterns = [
+            r'图片$',         # "图片"
+            r'图$',           # "图"
+            r'一下$',         # "一下"
+            r'呗$',           # "呗"
+            r'吧$',           # "吧"
+        ]
+        
+        for pattern in suffix_patterns:
+            cleaned_text = re.sub(pattern, '', cleaned_text, flags=re.IGNORECASE)
+        
+        # 清理空白字符
+        cleaned_text = cleaned_text.strip()
+        
+        # 如果清理后为空，返回原消息（可能是简单的描述）
+        if not cleaned_text:
+            cleaned_text = message_text
+            
+        # 限制长度，避免过长的描述
+        if len(cleaned_text) > 100:
+            cleaned_text = cleaned_text[:100]
+            
+        return cleaned_text
+
+    def _convert_to_english_prompt(self, chinese_description: str) -> str:
+        """将中文描述转换为英文绘画提示词
+        
+        Args:
+            chinese_description: 中文描述文本
+            
+        Returns:
+            str: 英文绘画提示词
+        """
+        if not chinese_description:
+            return chinese_description
+            
+        # 如果已经是英文，直接返回
+        if not any('\u4e00' <= char <= '\u9fff' for char in chinese_description):
+            return chinese_description
+            
+        # 基础翻译映射
+        translation_map = {
+            # 动物
+            '猫': 'cat', '小猫': 'cute cat', '猫咪': 'cat', '狗': 'dog', '小狗': 'puppy',
+            '兔子': 'rabbit', '鸟': 'bird', '鱼': 'fish', '蝴蝶': 'butterfly',
+            
+            # 人物
+            '女孩': 'girl', '男孩': 'boy', '女人': 'woman', '男人': 'man',
+            '孩子': 'child', '宝宝': 'baby',
+            
+            # 场景
+            '海边': 'beach', '海边': 'ocean', '森林': 'forest', '花园': 'garden',
+            '房间': 'room', '天空': 'sky', '月亮': 'moon', '太阳': 'sun',
+            
+            # 动作
+            '睡觉': 'sleeping', '坐着': 'sitting', '站着': 'standing', '走路': 'walking',
+            '跑步': 'running', '飞翔': 'flying', '游泳': 'swimming',
+            
+            # 形容词
+            '可爱': 'cute', '漂亮': 'beautiful', '帅气': 'handsome', '大': 'big',
+            '小': 'small', '红色': 'red', '蓝色': 'blue', '绿色': 'green',
+            '黄色': 'yellow', '黑色': 'black', '白色': 'white',
+            
+            # 其他
+            '一只': 'a', '一个': 'a', '在': 'in', '上': 'on', '下': 'under',
+        }
+        
+        # 简单的词汇替换
+        words = chinese_description
+        for chinese, english in translation_map.items():
+            words = words.replace(chinese, english)
+            
+        # 清理多余空格并添加适当的分隔
+        words = words.replace('  ', ' ').strip()
+        # 确保英文单词之间有适当空格
+        words = words.replace('a ', 'a ').replace(' in ', ' in ').replace(' on ', ' on ').replace(' under ', ' under ')
+            
+        # 如果还有中文字符，使用基础处理
+        if any('\u4e00' <= char <= '\u9fff' for char in words):
+            # 移除剩余的中文字符，保留英文和数字
+            import re
+            words = re.sub(r'[^\w\s,]', ' ', words)  # 移除特殊字符
+            words = re.sub(r'[\u4e00-\u9fff]', ' ', words)  # 移除中文字符
+            words = re.sub(r'\s+', ' ', words).strip()  # 清理多余空格
+            
+        # 添加基础画质标签
+        if words and not any(tag in words.lower() for tag in ['quality', 'masterpiece', 'best']):
+            words += ", masterpiece, best quality, high resolution"
+            
+        return words.strip()
