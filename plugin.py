@@ -22,15 +22,7 @@ class CustomPicPlugin(BasePlugin):
 
     # 插件基本信息
     plugin_name = "custom_pic_plugin"
-<<<<<<< HEAD
-<<<<<<< HEAD
     plugin_version = "3.3.3"
-=======
-    plugin_version = "3.3.0"
->>>>>>> 3301fb3 (适配UI)
-=======
-    plugin_version = "3.3.1"
->>>>>>> 47bbcf8 (添加更多命令)
     plugin_author = "Ptrel，Rabbit"
     enable_plugin = True
     dependencies: List[str] = []
@@ -39,10 +31,6 @@ class CustomPicPlugin(BasePlugin):
 
     # 配置节元数据
     config_section_descriptions = {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 3301fb3 (适配UI)
         "plugin": ConfigSection(
             title="插件启用配置",
             icon="info",
@@ -55,15 +43,7 @@ class CustomPicPlugin(BasePlugin):
         ),
         "components": ConfigSection(
             title="组件启用配置",
-<<<<<<< HEAD
-<<<<<<< HEAD
             icon="puzzle-piece",
-=======
-            icon="puzzle",
->>>>>>> 3301fb3 (适配UI)
-=======
-            icon="puzzle-piece",
->>>>>>> 47bbcf8 (添加更多命令)
             order=3
         ),
         "proxy": ConfigSection(
@@ -86,17 +66,12 @@ class CustomPicPlugin(BasePlugin):
             icon="trash",
             order=7
         ),
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 47bbcf8 (添加更多命令)
         "prompt_optimizer": ConfigSection(
             title="提示词优化器",
             description="使用 MaiBot 主 LLM 将用户描述优化为专业绘画提示词",
             icon="wand-2",
             order=8
         ),
-<<<<<<< HEAD
         "styles": ConfigSection(
             title="风格定义",
             description="预设风格的提示词。添加更多风格请直接编辑 config.toml，格式：风格英文名 = \"提示词\"",
@@ -108,32 +83,11 @@ class CustomPicPlugin(BasePlugin):
             description="风格的中文别名映射。添加更多别名请直接编辑 config.toml",
             icon="tag",
             order=10
-=======
-=======
->>>>>>> 47bbcf8 (添加更多命令)
-        "styles": ConfigSection(
-            title="风格定义",
-            description="预设风格的提示词。添加更多风格请直接编辑 config.toml，格式：风格英文名 = \"提示词\"",
-            icon="palette",
-            order=9
-        ),
-        "style_aliases": ConfigSection(
-            title="风格别名",
-            description="风格的中文别名映射。添加更多别名请直接编辑 config.toml",
-            icon="tag",
-<<<<<<< HEAD
-            order=9
->>>>>>> 3301fb3 (适配UI)
-=======
-            order=10
->>>>>>> 47bbcf8 (添加更多命令)
         ),
         "logging": ConfigSection(
             title="日志配置",
             icon="file-text",
             collapsed=True,
-<<<<<<< HEAD
-<<<<<<< HEAD
             order=11
         ),
         "models": ConfigSection(
@@ -141,47 +95,12 @@ class CustomPicPlugin(BasePlugin):
             description="添加更多模型请直接编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
             icon="cpu",
             order=12
-=======
-            order=10
-=======
-            order=11
->>>>>>> 47bbcf8 (添加更多命令)
-        ),
-        "models": ConfigSection(
-            title="多模型配置",
-            description="添加更多模型请直接编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
-            icon="cpu",
-<<<<<<< HEAD
-            order=11
->>>>>>> 3301fb3 (适配UI)
-=======
-            order=12
->>>>>>> 47bbcf8 (添加更多命令)
         ),
         "models.model1": ConfigSection(
             title="模型1配置",
             icon="box",
-<<<<<<< HEAD
-<<<<<<< HEAD
             order=13
         ),
-=======
-        "plugin": "插件启用配置",
-        "generation": "图片生成默认配置",
-        "models": "多模型配置，每个模型都有独立的参数设置",
-        "cache": "结果缓存配置",
-        "components": "组件启用配置",
-        "logging": "日志配置",
-        "selfie": "自拍模式配置",
-        "auto_recall": "自动撤回配置"
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-            order=12
-=======
-            order=13
->>>>>>> 47bbcf8 (添加更多命令)
-        ),
->>>>>>> 3301fb3 (适配UI)
     }
 
     # 自定义布局：标签页
@@ -203,15 +122,7 @@ class CustomPicPlugin(BasePlugin):
             ConfigTab(
                 id="features",
                 title="功能配置",
-<<<<<<< HEAD
-<<<<<<< HEAD
                 sections=["selfie", "auto_recall", "prompt_optimizer"],
-=======
-                sections=["selfie", "auto_recall"],
->>>>>>> 3301fb3 (适配UI)
-=======
-                sections=["selfie", "auto_recall", "prompt_optimizer"],
->>>>>>> 47bbcf8 (添加更多命令)
                 icon="zap"
             ),
             ConfigTab(
@@ -249,15 +160,7 @@ class CustomPicPlugin(BasePlugin):
             ),
             "config_version": ConfigField(
                 type=str,
-<<<<<<< HEAD
-<<<<<<< HEAD
                 default="3.3.3",
-=======
-                default="3.3.0",
->>>>>>> 3301fb3 (适配UI)
-=======
-                default="3.3.1",
->>>>>>> 47bbcf8 (添加更多命令)
                 description="插件配置版本号",
                 disabled=True,
                 order=2
@@ -334,25 +237,18 @@ class CustomPicPlugin(BasePlugin):
                 description="是否启用调试信息显示，关闭后仅显示图片结果和错误信息",
                 order=6
             ),
-<<<<<<< HEAD
             "enable_verbose_debug": ConfigField(
                 type=bool,
                 default=False,
                 description="是否启用详细调试信息，启用后会发送完整的调试信息以及打印完整的 POST 报文",
                 order=7
             ),
-=======
->>>>>>> 3301fb3 (适配UI)
             "admin_users": ConfigField(
                 type=list,
                 default=[],
                 description="有权限使用配置管理命令的管理员用户列表，请填写字符串形式的用户ID",
                 placeholder="[\"用户ID1\", \"用户ID2\"]",
-<<<<<<< HEAD
                 order=8
-=======
-                order=7
->>>>>>> 3301fb3 (适配UI)
             ),
             "max_retries": ConfigField(
                 type=int,
@@ -360,11 +256,7 @@ class CustomPicPlugin(BasePlugin):
                 description="API调用失败时的重试次数，建议2-5次。设置为0表示不重试",
                 min=0,
                 max=10,
-<<<<<<< HEAD
                 order=9
-=======
-                order=8
->>>>>>> 3301fb3 (适配UI)
             )
         },
         "logging": {
@@ -421,15 +313,7 @@ class CustomPicPlugin(BasePlugin):
             "cartoon": ConfigField(
                 type=str,
                 default="cartoon style, anime style, colorful, vibrant colors, clean lines",
-<<<<<<< HEAD
-<<<<<<< HEAD
                 description="卡通风格提示词",
-=======
-                description="卡通风格提示词。可添加更多风格，格式: 英文名 = \"英文提示词\"",
->>>>>>> 3301fb3 (适配UI)
-=======
-                description="卡通风格提示词",
->>>>>>> 47bbcf8 (添加更多命令)
                 input_type="textarea",
                 rows=3,
                 order=1
@@ -446,15 +330,7 @@ class CustomPicPlugin(BasePlugin):
             "cartoon": ConfigField(
                 type=str,
                 default="卡通",
-<<<<<<< HEAD
-<<<<<<< HEAD
                 description="cartoon 风格的中文别名，支持多别名用逗号分隔",
-=======
-                description="风格中文别名，格式: 英文名 = \"中文名\"。支持多别名，用逗号分隔",
->>>>>>> 3301fb3 (适配UI)
-=======
-                description="cartoon 风格的中文别名，支持多别名用逗号分隔",
->>>>>>> 47bbcf8 (添加更多命令)
                 placeholder="卡通,动漫",
                 order=1
             )
@@ -463,53 +339,21 @@ class CustomPicPlugin(BasePlugin):
             "enabled": ConfigField(
                 type=bool,
                 default=True,
-<<<<<<< HEAD
-<<<<<<< HEAD
                 description="是否启用自拍模式功能",
                 order=1
-=======
-                description="是否启用自拍模式功能"
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                description="是否启用自拍模式功能",
-                order=1
->>>>>>> 3301fb3 (适配UI)
             ),
             "reference_image_path": ConfigField(
                 type=str,
                 default="",
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 3301fb3 (适配UI)
                 description="自拍参考图片路径（相对于插件目录或绝对路径）。配置后自动使用图生图模式，留空则使用纯文生图。若模型不支持图生图会自动回退",
                 placeholder="images/reference.png",
                 depends_on="selfie.enabled",
                 depends_value=True,
                 order=2
-<<<<<<< HEAD
-=======
-                description="自拍参考图片路径（相对于插件目录或绝对路径）。优先使用此配置，留空则使用reference_image_base64"
-            ),
-            "reference_image_base64": ConfigField(
-                type=str,
-                default="",
-                description="自拍参考图片的base64编码。当reference_image_path为空时使用此配置"
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                description="自拍参考图片路径（相对于插件目录或绝对路径）。配置后自动使用图生图模式，留空则使用纯文生图。若模型不支持图生图会自动回退"
->>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
-=======
->>>>>>> 3301fb3 (适配UI)
             ),
             "prompt_prefix": ConfigField(
                 type=str,
                 default="",
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 3301fb3 (适配UI)
                 description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform, 1girl'",
                 input_type="textarea",
                 rows=2,
@@ -517,28 +361,12 @@ class CustomPicPlugin(BasePlugin):
                 depends_on="selfie.enabled",
                 depends_value=True,
                 order=3
-<<<<<<< HEAD
-=======
-                description="自拍模式专用提示词前缀。用于添加Bot的默认形象特征（发色、瞳色、服装风格等）。例如：'blue hair, red eyes, school uniform, 1girl'"
-<<<<<<< HEAD
-            ),
-            "use_reference_for_all": ConfigField(
-                type=bool,
-                default=False,
-                description="是否在所有自拍请求中使用参考图片进行图生图。开启后自拍将基于参考图生成"
->>>>>>> b183c65 (api客户端拆分重构)
-=======
->>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
-=======
->>>>>>> 3301fb3 (适配UI)
             )
         },
         "auto_recall": {
             "enabled": ConfigField(
                 type=bool,
                 default=False,
-<<<<<<< HEAD
-<<<<<<< HEAD
                 description="是否启用自动撤回功能（总开关）。关闭后所有模型的撤回都不生效",
                 order=1
             )
@@ -568,53 +396,11 @@ class CustomPicPlugin(BasePlugin):
             )
         },
         # 基础模型配置模板
-=======
-                description="是否启用自动撤回功能（总开关）。关闭后所有模型的撤回都不生效"
-            )
-        },
-        "models": {},
-        # 基础模型配置
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                description="是否启用自动撤回功能（总开关）。关闭后所有模型的撤回都不生效",
-                order=1
-            )
-        },
-        "prompt_optimizer": {
-            "enabled": ConfigField(
-                type=bool,
-                default=True,
-                description="是否启用提示词优化器。开启后会使用 MaiBot 主 LLM 将用户描述优化为专业英文提示词",
-                order=1
-            ),
-            "hint": ConfigField(
-                type=str,
-                default="优化器会自动将中文描述翻译并优化为专业的英文绘画提示词，提升生成效果。关闭后将直接使用用户原始描述。",
-                description="功能说明",
-                disabled=True,
-                order=2
-            )
-        },
-        "models": {
-            "hint": ConfigField(
-                type=str,
-                default="添加更多模型：编辑 config.toml，复制 [models.model1] 整节并改名为 model2、model3 等",
-                description="配置说明",
-                disabled=True,
-                order=1
-            )
-        },
-        # 基础模型配置模板
->>>>>>> 3301fb3 (适配UI)
         "models.model1": {
             "name": ConfigField(
                 type=str,
                 default="魔搭潦草模型",
-<<<<<<< HEAD
                 description="模型显示名称，在模型列表中展示，版本更新后请手动从 old 目录恢复配置",
-=======
-                description="模型显示名称，在模型列表中展示",
->>>>>>> 3301fb3 (适配UI)
                 order=1
             ),
             "base_url": ConfigField(
@@ -637,41 +423,16 @@ class CustomPicPlugin(BasePlugin):
             "format": ConfigField(
                 type=str,
                 default="openai",
-<<<<<<< HEAD
-<<<<<<< HEAD
                 description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，mengyuai=梦羽AI，zai=Zai(Gemini转发)",
                 choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "mengyuai", "zai"],
                 order=4
-=======
-                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，comfyui=ComfyUI，mengyuai=梦羽AI",
-<<<<<<< HEAD
-                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"]
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "comfyui", "mengyuai"],
-=======
-                description="API格式。openai=通用格式，doubao=豆包，gemini=Gemini，modelscope=魔搭，shatangyun=砂糖云(NovelAI)，mengyuai=梦羽AI，zai=Zai(Gemini转发)",
-                choices=["openai", "gemini", "doubao", "modelscope", "shatangyun", "mengyuai", "zai"],
->>>>>>> 47bbcf8 (添加更多命令)
-                order=4
->>>>>>> 3301fb3 (适配UI)
             ),
             "model": ConfigField(
                 type=str,
                 default="cancel13/liaocao",
-<<<<<<< HEAD
-<<<<<<< HEAD
                 description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）",
                 placeholder="model-name 或 0",
                 order=5
-=======
-                description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）"
->>>>>>> 8f68f5d (修复支持（除了comfyui）)
-=======
-                description="模型名称。梦羽AI格式填写模型索引数字（如0、1、2）",
-                placeholder="model-name 或 0",
-                order=5
->>>>>>> 3301fb3 (适配UI)
             ),
             "fixed_size_enabled": ConfigField(
                 type=bool,
@@ -732,41 +493,6 @@ class CustomPicPlugin(BasePlugin):
                 input_type="textarea",
                 rows=2,
                 order=13
-<<<<<<< HEAD
-            ),
-<<<<<<< HEAD
-<<<<<<< HEAD
-            "artist": ConfigField(
-                type=str,
-                default="",
-                description="艺术家风格标签（砂糖云专用）。留空则不添加",
-                order=14
-            ),
-            "support_img2img": ConfigField(
-                type=bool,
-                default=True,
-                description="该模型是否支持图生图功能，请根据API文档自行判断。设为false时会自动降级为文生图",
-                order=15
-            ),
-            "auto_recall_delay": ConfigField(
-                type=int,
-                default=0,
-                description="自动撤回延时（秒）。大于0时启用撤回，0表示不撤回。需先在「自动撤回配置」中开启总开关",
-                min=0,
-                max=120,
-                order=16
-=======
-            "support_img2img": ConfigField(type=bool, default=True, description="是否支持图生图。不支持时自动降级为文生图"),
-=======
-            "support_img2img": ConfigField(type=bool, default=True, description="该模型是否支持图生图功能，请根据API文档自行判断。设为false时会自动降级为文生图"),
->>>>>>> f8ebb48 (修复自拍参考图设置，更新说明)
-            "num_inference_steps": ConfigField(type=int, default=20, description="推理步数，影响质量和速度。推荐20-50"),
-            "auto_recall_delay": ConfigField(
-                type=int,
-                default=0,
-                description="自动撤回延时（秒）。大于0时启用撤回，0或不填则不撤回"
->>>>>>> b183c65 (api客户端拆分重构)
-=======
             ),
             "artist": ConfigField(
                 type=str,
@@ -787,7 +513,6 @@ class CustomPicPlugin(BasePlugin):
                 min=0,
                 max=120,
                 order=16
->>>>>>> 3301fb3 (适配UI)
             ),
         }
     }
@@ -812,11 +537,15 @@ class CustomPicPlugin(BasePlugin):
         # 初始化增强配置管理器
         self.enhanced_config_manager = EnhancedConfigManager(plugin_dir, self.config_file_name)
         
-        # 检查并更新配置（如果需要）
-        self._enhance_config_management()
+        # 检查并更新配置（如果需要），传入原始配置
+        self._enhance_config_management(original_config)
     
-    def _enhance_config_management(self):
-        """增强配置管理：备份、版本检查、智能合并"""
+    def _enhance_config_management(self, original_config=None):
+        """增强配置管理：备份、版本检查、智能合并
+        
+        Args:
+            original_config: 从磁盘读取的原始配置（在父类初始化前读取），用于恢复用户自定义值
+        """
         # 获取期望的配置版本
         expected_version = self._get_expected_config_version()
         
@@ -826,11 +555,47 @@ class CustomPicPlugin(BasePlugin):
         # 生成默认配置结构
         default_config = self._generate_default_config_from_schema()
         
+        # 确定要使用的旧配置：优先使用传入的原始配置，其次从备份文件加载
+        old_config = original_config
+        if old_config is None:
+            old_dir = os.path.join(self.plugin_dir, "old")
+            if os.path.exists(old_dir):
+                import toml
+                # 查找最新的备份文件（按时间戳排序），包括 auto_backup、new_backup 和 backup 文件
+                backup_files = []
+                for fname in os.listdir(old_dir):
+                    if (fname.startswith(self.config_file_name + ".backup_") or
+                        fname.startswith(self.config_file_name + ".new_backup_") or
+                        fname.startswith(self.config_file_name + ".auto_backup_")) and fname.endswith(".toml"):
+                        backup_files.append(fname)
+                if backup_files:
+                    # 按时间戳排序（文件名中包含 _YYYYMMDD_HHMMSS）
+                    backup_files.sort(reverse=True)
+                    latest_backup = os.path.join(old_dir, backup_files[0])
+                    try:
+                        with open(latest_backup, "r", encoding="utf-8") as f:
+                            old_config = toml.load(f)
+                        print(f"[CustomPicPlugin] 从备份文件加载原始配置: {backup_files[0]}")
+                    except Exception as e:
+                        print(f"[CustomPicPlugin] 加载备份文件失败: {e}")
+        
+        # 每次启动时创建备份（无论版本是否相同）
+        # 加载当前配置文件以获取版本
+        current_config = self.enhanced_config_manager.load_config()
+        if current_config:
+            current_version = self.enhanced_config_manager.get_config_version(current_config)
+            print(f"[CustomPicPlugin] 当前配置版本 v{current_version}，创建启动备份")
+            self.enhanced_config_manager.backup_config(current_version)
+        else:
+            print(f"[CustomPicPlugin] 配置文件不存在，跳过启动备份")
+        
         # 使用增强配置管理器检查并更新配置
+        # 传入旧配置（如果存在）以恢复用户自定义值
         updated_config = self.enhanced_config_manager.update_config_if_needed(
             expected_version=expected_version,
             default_config=default_config,
-            schema=schema_for_manager
+            schema=schema_for_manager,
+            old_config=old_config
         )
         
         # 如果配置有更新，更新self.config
