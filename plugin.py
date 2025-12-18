@@ -24,7 +24,7 @@ class CustomPicPlugin(BasePlugin):
 
     # 插件基本信息
     plugin_name = "custom_pic_plugin"
-    plugin_version = "3.3.1"
+    plugin_version = "3.3.3"
     plugin_author = "Ptrel，Rabbit"
     enable_plugin = True
     dependencies: List[str] = []
@@ -162,7 +162,7 @@ class CustomPicPlugin(BasePlugin):
             ),
             "config_version": ConfigField(
                 type=str,
-                default="3.3.1",
+                default="3.3.3",
                 description="插件配置版本号",
                 disabled=True,
                 order=2
@@ -239,12 +239,18 @@ class CustomPicPlugin(BasePlugin):
                 description="是否启用调试信息显示，关闭后仅显示图片结果和错误信息",
                 order=6
             ),
+            "enable_verbose_debug": ConfigField(
+                type=bool,
+                default=False,
+                description="是否启用详细调试信息，启用后会发送完整的调试信息以及打印完整的 POST 报文",
+                order=7
+            ),
             "admin_users": ConfigField(
                 type=list,
                 default=[],
                 description="有权限使用配置管理命令的管理员用户列表，请填写字符串形式的用户ID",
                 placeholder="[\"用户ID1\", \"用户ID2\"]",
-                order=7
+                order=8
             ),
             "max_retries": ConfigField(
                 type=int,
@@ -252,7 +258,7 @@ class CustomPicPlugin(BasePlugin):
                 description="API调用失败时的重试次数，建议2-5次。设置为0表示不重试",
                 min=0,
                 max=10,
-                order=8
+                order=9
             )
         },
         "logging": {
@@ -396,7 +402,7 @@ class CustomPicPlugin(BasePlugin):
             "name": ConfigField(
                 type=str,
                 default="魔搭潦草模型",
-                description="模型显示名称，在模型列表中展示",
+                description="模型显示名称，在模型列表中展示，版本更新后请手动从 old 目录恢复配置",
                 order=1
             ),
             "base_url": ConfigField(
@@ -515,17 +521,33 @@ class CustomPicPlugin(BasePlugin):
 
     def __init__(self, plugin_dir: str):
         """初始化插件，集成增强配置管理器"""
-        # 先调用父类初始化，这会加载配置
+        import toml
+        # 在父类初始化前读取原始配置文件
+        config_path = os.path.join(plugin_dir, self.config_file_name)
+        original_config = None
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    original_config = toml.load(f)
+                print(f"[CustomPicPlugin] 读取原始配置文件: {config_path}")
+            except Exception as e:
+                print(f"[CustomPicPlugin] 读取原始配置失败: {e}")
+        
+        # 先调用父类初始化，这会加载配置并可能触发 MaiBot 迁移
         super().__init__(plugin_dir)
         
         # 初始化增强配置管理器
         self.enhanced_config_manager = EnhancedConfigManager(plugin_dir, self.config_file_name)
         
-        # 检查并更新配置（如果需要）
-        self._enhance_config_management()
+        # 检查并更新配置（如果需要），传入原始配置
+        self._enhance_config_management(original_config)
     
-    def _enhance_config_management(self):
-        """增强配置管理：备份、版本检查、智能合并"""
+    def _enhance_config_management(self, original_config=None):
+        """增强配置管理：备份、版本检查、智能合并
+        
+        Args:
+            original_config: 从磁盘读取的原始配置（在父类初始化前读取），用于恢复用户自定义值
+        """
         # 获取期望的配置版本
         expected_version = self._get_expected_config_version()
         
@@ -535,11 +557,47 @@ class CustomPicPlugin(BasePlugin):
         # 生成默认配置结构
         default_config = self._generate_default_config_from_schema()
         
+        # 确定要使用的旧配置：优先使用传入的原始配置，其次从备份文件加载
+        old_config = original_config
+        if old_config is None:
+            old_dir = os.path.join(self.plugin_dir, "old")
+            if os.path.exists(old_dir):
+                import toml
+                # 查找最新的备份文件（按时间戳排序），包括 auto_backup、new_backup 和 backup 文件
+                backup_files = []
+                for fname in os.listdir(old_dir):
+                    if (fname.startswith(self.config_file_name + ".backup_") or
+                        fname.startswith(self.config_file_name + ".new_backup_") or
+                        fname.startswith(self.config_file_name + ".auto_backup_")) and fname.endswith(".toml"):
+                        backup_files.append(fname)
+                if backup_files:
+                    # 按时间戳排序（文件名中包含 _YYYYMMDD_HHMMSS）
+                    backup_files.sort(reverse=True)
+                    latest_backup = os.path.join(old_dir, backup_files[0])
+                    try:
+                        with open(latest_backup, "r", encoding="utf-8") as f:
+                            old_config = toml.load(f)
+                        print(f"[CustomPicPlugin] 从备份文件加载原始配置: {backup_files[0]}")
+                    except Exception as e:
+                        print(f"[CustomPicPlugin] 加载备份文件失败: {e}")
+        
+        # 每次启动时创建备份（无论版本是否相同）
+        # 加载当前配置文件以获取版本
+        current_config = self.enhanced_config_manager.load_config()
+        if current_config:
+            current_version = self.enhanced_config_manager.get_config_version(current_config)
+            print(f"[CustomPicPlugin] 当前配置版本 v{current_version}，创建启动备份")
+            self.enhanced_config_manager.backup_config(current_version)
+        else:
+            print(f"[CustomPicPlugin] 配置文件不存在，跳过启动备份")
+        
         # 使用增强配置管理器检查并更新配置
+        # 传入旧配置（如果存在）以恢复用户自定义值
         updated_config = self.enhanced_config_manager.update_config_if_needed(
             expected_version=expected_version,
             default_config=default_config,
-            schema=schema_for_manager
+            schema=schema_for_manager,
+            old_config=old_config
         )
         
         # 如果配置有更新，更新self.config

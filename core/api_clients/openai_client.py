@@ -117,6 +117,27 @@ class OpenAIClient(BaseApiClient):
             "Authorization": f"{generate_api_key}",
         }
 
+        # 详细调试信息
+        verbose_debug = self.action.get_config("components.enable_verbose_debug", False)
+        if verbose_debug:
+            # 记录完整的请求payload（隐藏敏感信息）
+            safe_payload = payload_dict.copy()
+            # 不记录图片base64数据，因为太长
+            if "image" in safe_payload:
+                safe_payload["image"] = "[BASE64_DATA...]"
+            # 创建安全的请求头副本，隐藏Authorization值
+            safe_headers = headers.copy()
+            if "Authorization" in safe_headers:
+                auth_value = safe_headers["Authorization"]
+                # 如果包含Bearer，保留Bearer前缀，隐藏其余部分
+                if auth_value.startswith("Bearer "):
+                    safe_headers["Authorization"] = "Bearer ***"
+                else:
+                    safe_headers["Authorization"] = "***"
+            logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 请求端点: {endpoint}")
+            logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 请求头: {safe_headers}")
+            logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 请求体: {json.dumps(safe_payload, ensure_ascii=False, indent=2)}")
+
         logger.info(f"{self.log_prefix} (OpenAI) 发起图片请求: {model}, Prompt: {prompt_add[:30]}... To: {endpoint}")
 
         # 获取代理配置
@@ -142,6 +163,10 @@ class OpenAIClient(BaseApiClient):
                 response_body_bytes = response.read()
                 response_body_str = response_body_bytes.decode("utf-8")
                 logger.info(f"{self.log_prefix} (OpenAI) 响应: {response_status}. Preview: {response_body_str[:150]}...")
+
+                # 详细调试信息
+                if verbose_debug:
+                    logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 完整响应体: {response_body_str}")
 
                 if 200 <= response_status < 300:
                     response_data = json.loads(response_body_str)
