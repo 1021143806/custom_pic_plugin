@@ -6,18 +6,8 @@
 - Gemini 格式
 - Modelscope 魔搭格式
 - Shatangyun 砂糖云格式 (NovelAI)
-<<<<<<< HEAD
-<<<<<<< HEAD
 - Mengyuai 梦羽AI格式
 - Zai 格式 (Gemini转发)
-=======
-- ComfyUI 格式
-- Mengyuai 梦羽AI格式
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-- Mengyuai 梦羽AI格式
-- Zai 格式 (Gemini转发)
->>>>>>> 47bbcf8 (添加更多命令)
 """
 
 from .base_client import BaseApiClient
@@ -26,18 +16,8 @@ from .doubao_client import DoubaoClient
 from .gemini_client import GeminiClient
 from .modelscope_client import ModelscopeClient
 from .shatangyun_client import ShatangyunClient
-<<<<<<< HEAD
-<<<<<<< HEAD
 from .mengyuai_client import MengyuaiClient
 from .zai_client import ZaiClient
-=======
-from .comfyui_client import ComfyUIClient
-from .mengyuai_client import MengyuaiClient
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-from .mengyuai_client import MengyuaiClient
-from .zai_client import ZaiClient
->>>>>>> 47bbcf8 (添加更多命令)
 
 __all__ = [
     'BaseApiClient',
@@ -46,18 +26,8 @@ __all__ = [
     'GeminiClient',
     'ModelscopeClient',
     'ShatangyunClient',
-<<<<<<< HEAD
-<<<<<<< HEAD
     'MengyuaiClient',
     'ZaiClient',
-=======
-    'ComfyUIClient',
-    'MengyuaiClient',
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-    'MengyuaiClient',
-    'ZaiClient',
->>>>>>> 47bbcf8 (添加更多命令)
     'ApiClient',
     'get_client_class',
 ]
@@ -70,18 +40,8 @@ CLIENT_MAPPING = {
     'gemini': GeminiClient,
     'modelscope': ModelscopeClient,
     'shatangyun': ShatangyunClient,
-<<<<<<< HEAD
-<<<<<<< HEAD
     'mengyuai': MengyuaiClient,
     'zai': ZaiClient,
-=======
-    'comfyui': ComfyUIClient,
-    'mengyuai': MengyuaiClient,
->>>>>>> b183c65 (api客户端拆分重构)
-=======
-    'mengyuai': MengyuaiClient,
-    'zai': ZaiClient,
->>>>>>> 47bbcf8 (添加更多命令)
 }
 
 
