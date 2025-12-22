@@ -162,9 +162,6 @@ class Custom_Pic_Action(BaseAction):
                 await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
                 return False, "图片描述为空"
 
-        # 将中文描述转换为英文提示词
-        description = self._convert_to_english_prompt(description)
-        
         # 清理和验证描述
         if len(description) > 1000:
             description = description[:1000]
@@ -733,71 +730,3 @@ class Custom_Pic_Action(BaseAction):
             
         return cleaned_text
 
-    def _convert_to_english_prompt(self, chinese_description: str) -> str:
-        """将中文描述转换为英文绘画提示词
-        
-        Args:
-            chinese_description: 中文描述文本
-            
-        Returns:
-            str: 英文绘画提示词
-        """
-        if not chinese_description:
-            return chinese_description
-            
-        # 如果已经是英文，直接返回
-        if not any('\u4e00' <= char <= '\u9fff' for char in chinese_description):
-            return chinese_description
-            
-        # 基础翻译映射
-        translation_map = {
-            # 动物
-            '猫': 'cat', '小猫': 'cute cat', '猫咪': 'cat', '狗': 'dog', '小狗': 'puppy',
-            '兔子': 'rabbit', '鸟': 'bird', '鱼': 'fish', '蝴蝶': 'butterfly',
-            
-            # 人物
-            '女孩': 'girl', '男孩': 'boy', '女人': 'woman', '男人': 'man',
-            '孩子': 'child', '宝宝': 'baby',
-            
-            # 场景
-            '海边': 'beach', '海滩': 'ocean', '森林': 'forest', '花园': 'garden',
-            '房间': 'room', '天空': 'sky', '月亮': 'moon', '太阳': 'sun',
-            
-            # 动作
-            '睡觉': 'sleeping', '坐着': 'sitting', '站着': 'standing', '走路': 'walking',
-            '跑步': 'running', '飞翔': 'flying', '游泳': 'swimming',
-            
-            # 形容词
-            '可爱': 'cute', '漂亮': 'beautiful', '帅气': 'handsome', '大': 'big',
-            '小': 'small', '红色': 'red', '蓝色': 'blue', '绿色': 'green',
-            '黄色': 'yellow', '黑色': 'black', '白色': 'white',
-            
-            # 其他
-            '一只': 'a', '一个': 'a', '在': 'in', '上': 'on', '下': 'under',
-        }
-        
-        # 简单的词汇替换
-        words = chinese_description
-        for chinese, english in translation_map.items():
-            words = words.replace(chinese, english)
-            
-        # 清理多余空格并添加适当的分隔
-        words = words.replace('  ', ' ').strip()
-            
-        # 如果还有中文字符，使用基础处理
-        if any('\u4e00' <= char <= '\u9fff' for char in words):
-            # 移除剩余的中文字符，保留英文和数字
-            import re
-            words = re.sub(r'[^\w\s,]', ' ', words)  # 移除特殊字符
-            words = re.sub(r'[\u4e00-\u9fff]', ' ', words)  # 移除中文字符
-            words = re.sub(r'\s+', ' ', words).strip()  # 清理多余空格
-            
-        # 如果处理后为空，回退到原始描述并添加默认标签
-        if not words:
-            words = chinese_description
-            
-        # 添加基础画质标签
-        if words and not any(tag in words.lower() for tag in ['quality', 'masterpiece', 'best']):
-            words += ", masterpiece, best quality, high resolution"
-            
-        return words.strip()
