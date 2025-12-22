@@ -792,6 +792,10 @@ class Custom_Pic_Action(BaseAction):
             words = re.sub(r'[\u4e00-\u9fff]', ' ', words)  # 移除中文字符
             words = re.sub(r'\s+', ' ', words).strip()  # 清理多余空格
             
+        # 如果处理后为空，回退到原始描述并添加默认标签
+        if not words:
+            words = chinese_description
+            
         # 添加基础画质标签
         if words and not any(tag in words.lower() for tag in ['quality', 'masterpiece', 'best']):
             words += ", masterpiece, best quality, high resolution"
