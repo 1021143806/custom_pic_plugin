@@ -173,13 +173,13 @@ class Custom_Pic_Action(BaseAction):
         # 提示词优化
         optimizer_enabled = self.get_config("prompt_optimizer.enabled", True)
         if optimizer_enabled:
-            logger.info(f"{self.log_prefix} 开始优化提示词...")
+            logger.info(f"{self.log_prefix} 开始优化提示词: {description[:50]}...")
             success, optimized_prompt = await optimize_prompt(description, self.log_prefix)
             if success:
                 logger.info(f"{self.log_prefix} 提示词优化完成: {optimized_prompt[:80]}...")
                 description = optimized_prompt
             else:
-                logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述")
+                logger.warning(f"{self.log_prefix} 提示词优化失败，使用原始描述: {description[:50]}...")
 
         # 验证strength参数
         try:
