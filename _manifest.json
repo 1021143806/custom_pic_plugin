@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "自定义智能多模型图片生成插件（custom_pic_plugin）",
-  "version": "3.3.1",
+  "version": "3.3.3",
   "description": "智能多模型图片生成插件，支持文生图和图生图自动识别。兼容OpenAI、豆包、Gemini、魔搭等多种API格式。提供命令式风格转换、模型配置管理、结果缓存等功能。支持动态模型切换、风格别名、调试开关等高级特性。",
   "author": {
     "name": "Ptrel，Rabbit-Jia-Er，saberlights Kiuon",
