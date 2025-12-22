@@ -162,11 +162,13 @@ class OpenAIClient(BaseApiClient):
                 response_status = response.status
                 response_body_bytes = response.read()
                 response_body_str = response_body_bytes.decode("utf-8")
-                logger.info(f"{self.log_prefix} (OpenAI) 响应: {response_status}. Preview: {response_body_str[:150]}...")
+                # 清理响应体中的base64图片数据
+                cleaned_response = self._clean_response_body(response_body_str)
+                logger.info(f"{self.log_prefix} (OpenAI) 响应: {response_status}. Preview: {cleaned_response[:150]}...")
 
                 # 详细调试信息
                 if verbose_debug:
-                    logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 完整响应体: {response_body_str}")
+                    logger.info(f"{self.log_prefix} (OpenAI) 详细调试 - 完整响应体: {cleaned_response}")
 
                 if 200 <= response_status < 300:
                     response_data = json.loads(response_body_str)
@@ -202,12 +204,51 @@ class OpenAIClient(BaseApiClient):
                         logger.info(f"{self.log_prefix} (OpenAI) 图片生成成功，URL: {image_url[:70]}...")
                         return True, image_url
                     else:
-                        logger.error(f"{self.log_prefix} (OpenAI) API成功但无图片URL. 响应预览: {response_body_str[:300]}...")
+                        logger.error(f"{self.log_prefix} (OpenAI) API成功但无图片URL. 响应预览: {cleaned_response[:300]}...")
                         return False, "图片生成API响应成功但未找到图片URL"
                 else:
-                    logger.error(f"{self.log_prefix} (OpenAI) API请求失败. 状态: {response.status}. 正文: {response_body_str[:300]}...")
+                    logger.error(f"{self.log_prefix} (OpenAI) API请求失败. 状态: {response.status}. 正文: {cleaned_response[:300]}...")
                     return False, f"图片API请求失败(状态码 {response.status})"
         except Exception as e:
             logger.error(f"{self.log_prefix} (OpenAI) 图片生成时意外错误: {e!r}", exc_info=True)
             traceback.print_exc()
             return False, f"图片生成HTTP请求时发生意外错误: {str(e)[:100]}"
+
+    def _clean_response_body(self, response_body: str) -> str:
+        """清理响应体中的base64图片数据，避免日志打印完整的base64字符串
+        
+        Args:
+            response_body: 原始响应体字符串
+            
+        Returns:
+            清理后的响应体，base64数据被替换为占位符
+        """
+        try:
+            # 如果响应体是JSON，尝试解析并替换b64_json字段
+            import json
+            data = json.loads(response_body)
+            if isinstance(data, dict):
+                # 检查是否有b64_json字段
+                if "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0:
+                    for item in data["data"]:
+                        if isinstance(item, dict) and "b64_json" in item:
+                            item["b64_json"] = "[BASE64_DATA...]"
+                # 检查是否有images字段（魔搭格式）
+                if "images" in data and isinstance(data["images"], list) and len(data["images"]) > 0:
+                    for i, img in enumerate(data["images"]):
+                        if isinstance(img, dict) and "url" in img:
+                            # URL可以保留
+                            pass
+                # 重新序列化为字符串
+                return json.dumps(data, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            # 如果不是JSON，检查是否是纯base64图片数据
+            # 常见的base64图片前缀
+            base64_prefixes = ['/9j/', 'iVBORw', 'UklGR', 'R0lGOD']
+            if any(response_body.startswith(prefix) for prefix in base64_prefixes):
+                return "[BASE64_IMAGE_DATA...]"
+            # 如果包含很长的base64字符串（长度>500），截断
+            if len(response_body) > 500 and all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in response_body[:100]):
+                return f"[BASE64_DATA_LEN:{len(response_body)}]"
+        # 其他情况返回原样
+        return response_body
