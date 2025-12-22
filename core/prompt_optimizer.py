@@ -97,11 +97,11 @@ class PromptOptimizer:
                 logger.info(f"{self.log_prefix} 优化成功 (模型: {model_name}): {optimized[:80]}...")
                 return True, optimized
             else:
-                logger.warning(f"{self.log_prefix} LLM 返回空响应，降级使用原始描述")
+                logger.warning(f"{self.log_prefix} LLM 返回空响应，降级使用原始描述: {user_description[:50]}...")
                 return True, user_description
 
         except Exception as e:
-            logger.error(f"{self.log_prefix} 优化失败: {e}")
+            logger.error(f"{self.log_prefix} 优化失败: {e}，使用原始描述: {user_description[:50]}...")
             # 降级：返回原始描述
             return True, user_description
 
