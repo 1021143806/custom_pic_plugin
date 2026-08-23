@@ -25,3 +25,6 @@ requirements.txt
 
 #忽略ai生成的test文件
 test_*
+# 本地备份文件
+*.bak_*
+*.bak
